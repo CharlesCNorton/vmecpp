@@ -939,7 +939,8 @@ absl::StatusOr<bool> IdealMhdModel::update(
       // m_physical_x is already current because the host triplet stays
       // alive on free-boundary runs.
       vmecpp::ScaleRZCon0Cuda(0.9);
-      vmecpp::FlushVacuumHostDataCuda(r_, s_, r1_e, r1_o, z1_e, totalPressure);
+      vmecpp::FlushVacuumHostDataCuda(r_, s_, r1_e, r1_o, z1_e, totalPressure,
+                                      m_p_.presH);
       // The NESTOR call below consumes the toroidal-current scalars;
       // their inputs arrived with the synchronized flush above.
       if (r_.nsMinH == 0) {

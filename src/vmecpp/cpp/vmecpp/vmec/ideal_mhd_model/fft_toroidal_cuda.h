@@ -269,13 +269,15 @@ void SetFreeBoundaryRunCuda(int enabled);
 // Scales the device rCon0/zCon0 volume profiles in place.
 void ScaleRZCon0Cuda(double factor);
 // One consolidated D2H flush per vacuum iteration: the axis and LCFS
-// geometry rows plus the outermost totalPressure rows, with a single
+// geometry rows, the outermost totalPressure rows, and the presH
+// profile consumed by the edge-pressure extrapolation, with a single
 // synchronize that also drains the bucoH/bvcoH copies queued by
 // radialForceBalance.
 void FlushVacuumHostDataCuda(const RadialPartitioning& r, const Sizes& s,
                              Eigen::VectorXd& m_r1_e, Eigen::VectorXd& m_r1_o,
                              Eigen::VectorXd& m_z1_e,
-                             Eigen::VectorXd& m_totalPressure);
+                             Eigen::VectorXd& m_totalPressure,
+                             Eigen::VectorXd& m_presH);
 // H2D stage of the host-computed rBSq profile for the edge application.
 void StageRbsqCuda(const Eigen::VectorXd& rBSq);
 

@@ -10370,6 +10370,7 @@ struct CudaToroidalState {
   // profile (nZnT doubles, single configuration); rbsq_staged marks it
   // current for the iteration's force assembly.
   double* d_rbsq = nullptr;
+  int rbsq_size = 0;
   bool rbsq_staged = false;
   // Batched int8-Ozaki scatter state. The W limbs and column exponents
   // are shape-constant (built once after Reshape); the Y limbs and row
@@ -15890,14 +15891,17 @@ void ScaleRZCon0Cuda(double factor) {
 }
 
 // One D2H flush per vacuum iteration: the axis row of r1_e/z1_e, the
-// LCFS row of r1_e/r1_o, and the outermost two totalPressure rows. The
-// single synchronize also drains the bucoH/bvcoH copies queued by
-// radialForceBalance.
+// LCFS row of r1_e/r1_o, the outermost two totalPressure rows, and the
+// presH profile (the edge-pressure extrapolation reads its outermost
+// entry on the host; without the flush that array is never written
+// under CUDA). The single synchronize also drains the bucoH/bvcoH
+// copies queued by radialForceBalance.
 void FlushVacuumHostDataCuda(const RadialPartitioning& r, const Sizes& s,
                              Eigen::VectorXd& m_r1_e,
                              Eigen::VectorXd& m_r1_o,
                              Eigen::VectorXd& m_z1_e,
-                             Eigen::VectorXd& m_totalPressure) {
+                             Eigen::VectorXd& m_totalPressure,
+                             Eigen::VectorXd& m_presH) {
   auto& S = State();
   if (!S.stream || !S.d_r1_e) return;
   std::lock_guard<std::mutex> lk(S.mu);
@@ -15928,6 +15932,12 @@ void FlushVacuumHostDataCuda(const RadialPartitioning& r, const Sizes& s,
                                cudaMemcpyDeviceToHost, S.stream),
                "d2h totalPressure edge rows");
   }
+  if (S.d_presH && ns_h > 0 && m_presH.size() >= ns_h) {
+    cuda_check(cudaMemcpyAsync(m_presH.data(), S.d_presH,
+                               sizeof(double) * (size_t)ns_h,
+                               cudaMemcpyDeviceToHost, S.stream),
+               "d2h presH");
+  }
   cuda_check(cudaStreamSynchronize(S.stream), "vacuum host-data sync");
 }
 
@@ -15938,8 +15948,13 @@ void StageRbsqCuda(const Eigen::VectorXd& rBSq) {
   if (!S.stream) return;
   std::lock_guard<std::mutex> lk(S.mu);
   const size_t bytes = sizeof(double) * (size_t)rBSq.size();
+  if (S.d_rbsq && S.rbsq_size != (int)rBSq.size()) {
+    cudaFree(S.d_rbsq);
+    S.d_rbsq = nullptr;
+  }
   if (!S.d_rbsq) {
     cuda_check(cudaMalloc(&S.d_rbsq, bytes), "alloc d_rbsq");
+    S.rbsq_size = (int)rBSq.size();
   }
   cuda_check(cudaMemcpyAsync(S.d_rbsq, rBSq.data(), bytes,
                              cudaMemcpyHostToDevice, S.stream),

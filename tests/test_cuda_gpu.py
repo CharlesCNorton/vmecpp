@@ -274,6 +274,20 @@ def test_free_boundary_wout_fields_match_reference():
     assert compared >= 8, f"only {compared} fields compared"
 
 
+def test_fixed_then_free_boundary_one_process():
+    # A fixed-boundary run followed by a free-boundary run in the same
+    # process: the vacuum block's host-side consumers (the edge-pressure
+    # extrapolation reads presH) must see flushed device values, not
+    # whatever the reallocated host arrays inherited from the prior run.
+    _single_env()
+    vmecpp.run(_cma_input(), max_threads=1, verbose=False)
+    vi = vmecpp.VmecInput.from_file(TEST_DATA_DIR / "cth_like_free_bdy.json")
+    vi.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
+    out = vmecpp.run(vi, max_threads=1, verbose=False)
+    assert out.wout.volume == pytest.approx(0.307272962641336, rel=5e-5)
+    assert out.wout.wb == pytest.approx(0.00128358507023996, rel=5e-6)
+
+
 def test_hot_restart_reproduces_converged_state():
     # A run restarted from its own converged output must terminate at
     # the same equilibrium; the restart path stages the device state
