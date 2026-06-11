@@ -3379,30 +3379,16 @@ __global__ void k_jacobian_metric_dvdsh_atomic(
   atomicAdd(&dVdsH[config * ns_h + jH_local], contrib);
 }
 
-// k_jacobian_metric_dvdsh_atomic_pair is a half-grid coarsening
-// variant of the atomic-accumulation fused kernel above. Each block
-// services a pair of adjacent half-grid surfaces, with the lower
-// index jH_lo computed as 2 * blockIdx.y and the upper index jH_hi
-// as jH_lo + 1; the second thread-axis dimension threadIdx.y in
-// {0, 1} selects which surface of the pair the thread processes.
-// The shared boundary surface, indexed by
-// jF = jH_lo + 1 + jF_in_offset, serves as the outer surface of
-// jH_lo and the inner surface of jH_hi, and consequently appears in
-// the input set of both halves of the pair. Caching the eight main
-// full-grid fields evaluated at that shared surface into the block's
-// shared memory replaces two of the four jF-direction global reads
-// per pair with shared-memory accesses, halving the global memory
-// traffic of the main field path. The shared-memory footprint is
-// twelve kilobytes per block at nZnT equal to one hundred ninety-
-// two, leaving room for the per-block accumulators while remaining
-// within the occupancy budget; an extension of the cached set to
-// twelve fields including rv and zv was evaluated and abandoned on
-// the basis that the resulting eighteen-kilobyte shared budget
-// reduced occupancy enough to outweigh the additional shared hits.
-// The differential-volume reduction continues to use atomicAdd
-// against dVdsH, and the resulting non-determinism in summation
-// order is admitted by the drift tolerance on dVdsH; aspect_ratio
-// continues to match the bit-exact reference.
+// k_jacobian_metric_dvdsh_atomic_pair: half-grid pair coarsening of
+// the fused kernel above. Each block services two adjacent half-grid
+// surfaces (jH_lo = 2 * blockIdx.y, jH_hi = jH_lo + 1; threadIdx.y
+// selects the surface). The shared boundary surface
+// jF = jH_lo + 1 + jF_in_offset feeds both halves, so caching its
+// eight main full-grid fields in shared memory halves the main-field
+// global traffic (12 KB per block at nZnT = 192). The
+// differential-volume reduction keeps atomicAdd into dVdsH; the
+// summation-order non-determinism is admitted by the dVdsH drift
+// tolerance, and aspect_ratio stays bit-exact.
 __global__ __launch_bounds__(128, 5) void k_jacobian_metric_dvdsh_atomic_pair(
     int n_config, int ns_local,
     int ns_h, int jF_in_offset, int nZnT, int nThetaEff, bool lthreed,
@@ -8498,9 +8484,7 @@ __device__ __forceinline__ void slice_fp64_to_tf32_3(double v,
 //   6. Output is FP64 to the 16 production buffers (r1_e/r1_o/.../lv_e/lv_o).
 //   7. rcon/zcon are produced by a trailing scalar pass (k_scatter_rcon_zcon_fp64).
 //
-// Standalone test _runtime/_test_custom_gemm_wmma_ozaki.cu validates the
-// 3-slice TF32 wmma path produces rel ~ 2.7e-6 on a 16x16x16 GEMM,
-// well below the VMEC drift family floor of 1e-5 relative.
+// The 3-slice TF32 wmma sum reaches rel ~ 2.7e-6.
 //
 // Gated by VMECPP_SCATTER_CUSTOM_GEMM_WMMA=1.
 //
@@ -10608,8 +10592,7 @@ struct CudaToroidalState {
   double* d_residuals_partials_K = nullptr;
   static constexpr int kResidualsKPartitions = 16;
 
-  // Time-step controller on device. Stepping stone toward the
-  // persistent CUDA kernel iter loop that eliminates per-iter host syncs.
+  // Time-step controller on device.
   // Layout (per-cfg, sized in EnsureTimestepBuffers):
   //   d_inv_tau     : [n_config_max * kNDamp] doubles; ring buffer of 1/tau
   //                   samples. Each iter shifts left by 1 and writes the new
@@ -11710,27 +11693,11 @@ struct CudaToroidalState {
     pmat_ns_force_local_cached = ns_force_local;
   }
 
-  // Reinitialisation hook invoked at the entry to a new
-  // Vmec::run() invocation. The per-side preconditioner-matrix
-  // snapshot buffers (d_pmat_arm, d_pmat_brm, d_pmat_ard,
-  // d_pmat_brd, d_pmat_azm, d_pmat_bzm, d_pmat_azd, d_pmat_bzd,
-  // d_pmat_cxd) and the RZ-preconditioner outputs (d_rz_aR,
-  // d_rz_dR, d_rz_bR, d_rz_aZ, d_rz_dZ, d_rz_bZ, together with
-  // d_rz_jMin) are zeroed so that residual values from a prior
-  // Vmec run cannot influence the subsequent run. The CPU
-  // implementation performs the analogous reset implicitly by
-  // re-constructing IdealMhdModel for every Vmec instance, which
-  // zero-initialises arm, brm, ard, brd, azm, bzm, azd, bzd, and
-  // cxd through Eigen's setZero. The persistent device buffers in
-  // CudaToroidalState are not destroyed across Vmec instances, so
-  // the explicit reset performed here is the device-side equivalent
-  // of that host-side re-initialisation. Without it, a second
-  // forward_model call in the same process would inherit the prior
-  // call's final values for these buffers and would diverge at
-  // iteration zero, before ComputePreconditioningMatrixCuda has had
-  // an opportunity to refresh the snapshots. The reset is exposed
-  // to vmec.cc through the free-function wrapper
-  // ResetCudaStateForNewVmecRun declared in fft_toroidal_cuda.h.
+  // Reinitialisation at the entry to a new Vmec::run: zeroes the
+  // preconditioner-matrix snapshots and the RZ-preconditioner
+  // outputs. The CPU build gets the equivalent reset implicitly by
+  // re-constructing IdealMhdModel per Vmec instance; the persistent
+  // device buffers survive instances, so the reset is explicit here.
   void ResetForNewVmecRun() {
     std::lock_guard<std::mutex> lk(mu);
     if (!stream) return;
@@ -12303,18 +12270,9 @@ int GetIRPhase() {
   return (g_ir_residual_sum > g_ir_threshold) ? 1 : 0;
 }
 
-// Global wrapper that resets the thread-local CudaToroidalState at
-// the start of each Vmec::run invocation, ensuring that persistent
-// device buffers populated by earlier runs in the same process do
-// not retain stale values. Affected buffers include the preconditioner
-// snapshots d_pmat_arm, d_pmat_brm, d_pmat_ard, d_pmat_brd, d_pmat_azm,
-// d_pmat_bzm, d_pmat_azd, d_pmat_bzd, and d_pmat_cxd, together with the
-// tri-diagonal coefficient arrays d_rz_aR, d_rz_dR, d_rz_bR, d_rz_aZ,
-// d_rz_dZ, d_rz_bZ, and the per-mode minimum-radial-surface index
-// d_rz_jMin. The wrapper is defined at file scope so that vmec.cc need
-// only include the declaration in fft_toroidal_cuda.h, and is safe to
-// invoke before the device stream has been allocated, in which case
-// the call is a no-op.
+// Resets the thread-local CudaToroidalState at the start of each
+// Vmec::run so persistent device buffers carry nothing between runs
+// in one process. Safe to invoke before the stream exists (no-op).
 // True while the current Vmec::run solves a free-boundary input. The
 // segment and whole-iteration CUDA graphs are disabled for the run: the
 // vacuum block synchronizes the stream on every iteration and the edge
@@ -13146,24 +13104,12 @@ void FourierToReal3DSymmFastPoloidalCuda(
   bool replay_only = use_fwd_graph && S.fwd_graph_captured;
   bool capture_then_launch = use_fwd_graph && !S.fwd_graph_captured;
 
-  // Disabled scaffold: warp-cooperative full-pipeline fusion through
-  // k_fwd_fused_warp. Each warp processes one (cfg, jF_local, k)
-  // tuple, and __shfl_xor_sync butterfly reductions across the lanes
-  // collapse the toroidal-mode sum so the inner accumulation occurs
-  // once per warp rather than once per lane; a single read pass over
-  // the spectral coefficient arrays suffices and the d_X and d_Y
-  // intermediates are eliminated. Outputs are written with direct
-  // assignment, the warp being the sole producer of each
-  // (cfg, jF_local, k, l) position. The fused inner transform is a
-  // direct-sum length-24 DFT rather than the Cooley-Tukey radix-8x3
-  // factorization that cuFFT employs internally, so the floating-point
-  // operation count exceeds that of cufftExecZ2D by a substantial
-  // factor; the memory-traffic reduction does not compensate for the
-  // additional arithmetic, and aspect_ratio drifts by approximately
-  // two units in the last place relative to the cuFFT path. A
-  // replacement that incorporates the radix-8x3 factorization within
-  // the fused kernel would be required to bring this path within
-  // contention of the production chain.
+  // Disabled scaffold: warp-cooperative fusion through
+  // k_fwd_fused_warp (one (cfg, jF_local, k) tuple per warp,
+  // __shfl_xor_sync reductions, no d_X/d_Y intermediates). Its inner
+  // transform is a direct-sum length-24 DFT, so the arithmetic exceeds
+  // cufftExecZ2D's radix-8x3 by more than the saved memory traffic,
+  // and aspect_ratio drifts ~2 ULP.
   if (false) {
     dim3 warp_blocks(1, nZeta, ns_local * S.n_config_max);
     dim3 warp_tpb(32, 1, 1);
@@ -17760,21 +17706,10 @@ void RecomposeToPhysicalCuda(
     EnsurePTSBackupBuffers(S);
   }
 
-  // A defensive broadcast of the configuration-zero slice of d_pts_x
-  // into the slices for the remaining configurations is available
-  // through the VMECPP_DEFENSIVE_BROADCAST environment variable. When
-  // active, every entry into RecomposeToPhysicalCuda re-copies cfg 0
-  // into cfg 1 through cfg n_config_max - 1, which is mathematically
-  // correct under the broadcast batched workload (all configurations
-  // sharing the same input) and a redundant no-op under a
-  // per-configuration-correct workload (all per-cfg slices already
-  // carrying the correct values). The mechanism exists as a safety
-  // net against unintentional cfg-zero-only writes elsewhere in the
-  // pipeline. The default state is disabled, on the basis that the
-  // audit of per-configuration kernel writes closed the cfg-zero-only
-  // omissions that the broadcast had previously been masking; the
-  // variable is provided as an opt-in fallback for investigating any
-  // regression that would benefit from the safety net.
+  // VMECPP_DEFENSIVE_BROADCAST=1: every RecomposeToPhysicalCuda entry
+  // re-copies the cfg-0 slice of d_pts_x into all other slices.
+  // Correct under broadcast inputs, redundant under per-cfg-correct
+  // ones; an opt-in net for catching cfg-zero-only write regressions.
   static int defensive_broadcast_env = -1;
   if (defensive_broadcast_env < 0) {
     const char* e = std::getenv("VMECPP_DEFENSIVE_BROADCAST");
