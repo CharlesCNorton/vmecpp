@@ -60,6 +60,17 @@ def test_single_cma_canonical():
     assert out.wout.aspect == pytest.approx(CMA_ASPECT, rel=1e-11)
 
 
+def test_repeated_run_bit_identical():
+    # The same input run twice in one process returns bitwise-identical
+    # results; the persistent device state carries nothing between runs.
+    _single_env()
+    first = vmecpp.run(_cma_input(), max_threads=1, verbose=False)
+    second = vmecpp.run(_cma_input(), max_threads=1, verbose=False)
+    assert second.wout.volume == first.wout.volume
+    assert second.wout.aspect == first.wout.aspect
+    assert second.wout.wb == first.wout.wb
+
+
 def test_broadcast_returns_single_output():
     # Broadcast mode solves one boundary in every slot and returns the
     # single converged result. This path also exercises the iteration-1
