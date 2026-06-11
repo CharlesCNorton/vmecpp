@@ -204,6 +204,15 @@ class IdealMhdModel {
   // partial update of the Nestor free boundary force contribution is computed.
   int get_ivacskip() const;
 
+  // Device-to-host flush of all device-resident fields consumed by the
+  // post-iteration output-derivation path (GatherDataFromThreads and the
+  // routines invoked from ComputeOutputQuantities). Invoked exactly once
+  // from Vmec::run after the iteration loop terminates, in place of the
+  // per-iteration partial flushes that the host triplet would otherwise
+  // require. On builds without VMECPP_USE_CUDA the implementation is a
+  // no-op, allowing call sites to remain unconditional.
+  void FlushForOutputCuda();
+
   /**********************************************/
 
   // R on full-grid

@@ -102,6 +102,24 @@ include_directories(${abseil-cpp_SOURCE_DIR})
 # specified relative to `${PROJECT_SOURCE_DIR}/src/vmecpp/cpp`.
 include_directories(${PROJECT_SOURCE_DIR}/src/vmecpp/cpp)
 
+# CUDA-backed toroidal FFT (optional). Must be enabled BEFORE add_subdirectory
+# so the .cu source gets picked up by the ideal_mhd_model subdir's CMakeLists.
+option(VMECPP_USE_CUDA "Use CUDA-backed toroidal FFT kernels (requires CUDA toolkit + cuFFT)" OFF)
+if(VMECPP_USE_CUDA)
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  set(CMAKE_CUDA_STANDARD 20)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+  # The .cu file gets linked into vmecpp_core, which is then linked into the
+  # shared Python module .so. Force -fPIC on nvcc's host compilation.
+  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-fPIC")
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    # sm_70 covers V100, sm_80 covers A100/H100, sm_89 covers Ada.
+    set(CMAKE_CUDA_ARCHITECTURES "70;80;89")
+  endif()
+  message(STATUS "VMECPP_USE_CUDA: enabled, CUDA arches=${CMAKE_CUDA_ARCHITECTURES}")
+endif()
+
 # Assemble the VMEC++ source tree.
 # Start out with ABSCAB sources - no need for a separate library for ABSCAB.
 set(vmecpp_sources ${abscab_sources})
@@ -139,6 +157,14 @@ if(VMECPP_USE_FFTX)
   list(LENGTH _fftx_prdft_srcs  _n_prdft)
   message(STATUS "FFTX vendored codelets: ${_n_iprdft} iprdft + ${_n_prdft} prdft sources")
 endif()
+
+# CUDA-backed toroidal FFT (links cuFFT + cuBLAS + cudart, defines VMECPP_USE_CUDA).
+if(VMECPP_USE_CUDA)
+  target_link_libraries(vmecpp_core PRIVATE CUDA::cudart CUDA::cufft CUDA::cublas)
+  target_compile_definitions(vmecpp_core PUBLIC VMECPP_USE_CUDA)
+  message(STATUS "VMECPP_USE_CUDA: linked CUDA::cudart + CUDA::cufft + CUDA::cublas")
+endif()
+
 target_link_libraries(vmecpp_core PRIVATE absl::algorithm absl::base absl::synchronization absl::strings absl::str_format absl::log absl::string_view absl::check absl::status absl::statusor)
 
 if(OpenMP_CXX_FOUND)
