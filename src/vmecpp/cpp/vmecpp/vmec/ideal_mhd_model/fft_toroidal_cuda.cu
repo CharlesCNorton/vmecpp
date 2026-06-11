@@ -11814,8 +11814,16 @@ struct CudaToroidalState {
 
   void EnsureConstraintMultiplierBuffers(int ns_force_local, int ns_con_local,
                                           int nZnT) {
-    auto alloc_if_null = [](double*& p, size_t bytes) {
-      if (!p) cuda_check(cudaMalloc(&p, bytes), "alloc cm buf");
+    // Zero-fill on allocation: the CPU counterparts are setZero'd at
+    // construction, and the writers skip rows outside their domain (the
+    // axis row under jMin = 1, the LCFS row of the force-local arrays).
+    // Without the fill those rows read allocator residue, which varies
+    // with the process's prior allocation history.
+    auto alloc_if_null = [this](double*& p, size_t bytes) {
+      if (!p) {
+        cuda_check(cudaMalloc(&p, bytes), "alloc cm buf");
+        cuda_check(cudaMemsetAsync(p, 0, bytes, stream), "zero cm buf");
+      }
     };
     // Batched layout: per-config constraint-multiplier buffers.
     alloc_if_null(d_arNorm, sizeof(double) * n_config_max * ns_force_local);
@@ -12292,6 +12300,14 @@ void SetVacuumEdgeCuda(int active) { g_vacuum_edge_run = (active != 0); }
 // other gates: re-read at the start of every Vmec::run.
 static int g_iter_graph_env = -1;
 
+// Residuals K-partition count, run-scoped: the auto default derives from
+// the run's configuration count, and the partition count fixes the
+// summation order of the residual reduction. A process-lifetime latch
+// would carry the first run's partition geometry into later runs with a
+// different configuration count, changing their residual rounding and,
+// through the time-step damping, their trajectories.
+static int g_residuals_k_run = -1;
+
 void SetFreeBoundaryRunCuda(int enabled) {
   g_free_boundary_run = (enabled != 0);
 }
@@ -12304,11 +12320,12 @@ void ResetCudaStateForNewVmecRun() {
     const char* env = std::getenv("VMECPP_N_CONFIG_MAX");
     g_n_config_run = (env != nullptr) ? std::max(1, std::atoi(env)) : 1;
   }
-  // The multigrid-upscale and iteration-graph gates re-read with the
-  // same per-run scope.
+  // The multigrid-upscale, iteration-graph, and residuals-partition
+  // gates re-read with the same per-run scope.
   g_batch_upscale_env = -1;
   g_batch_upscale_kernel_env = -1;
   g_iter_graph_env = -1;
+  g_residuals_k_run = -1;
   g_free_boundary_run = false;
   State().ResetForNewVmecRun();
 }
@@ -16782,8 +16799,7 @@ void ResidualsCuda(const RadialPartitioning& r, const Sizes& s,
   // the K-partition finalize-kernel overhead would net negative. K is
   // capped at CudaToroidalState::kResidualsKPartitions (16). The env var
   // override is honored verbatim when set.
-  static int residuals_k_env = -1;
-  if (residuals_k_env < 0) {
+  if (g_residuals_k_run < 0) {
     const char* e = std::getenv("VMECPP_RESIDUALS_K");
     int v;
     if (e) {
@@ -16797,16 +16813,19 @@ void ResidualsCuda(const RadialPartitioning& r, const Sizes& s,
     if (v > CudaToroidalState::kResidualsKPartitions) {
       v = CudaToroidalState::kResidualsKPartitions;
     }
-    residuals_k_env = v;
-    if (residuals_k_env > 1) {
+    g_residuals_k_run = v;
+    static int last_k_printed = 0;
+    if (g_residuals_k_run > 1 && g_residuals_k_run != last_k_printed) {
+      last_k_printed = g_residuals_k_run;
       std::fprintf(stderr,
           "[fft_toroidal_cuda] residuals K-partition reduction ENABLED "
           "(K=%d, n_config=%d → K*n_cfg=%d SM coverage; "
           "set VMECPP_RESIDUALS_K=1 to revert)\n",
-          residuals_k_env, S.n_config_max,
-          residuals_k_env * S.n_config_max);
+          g_residuals_k_run, S.n_config_max,
+          g_residuals_k_run * S.n_config_max);
     }
   }
+  const int residuals_k_env = g_residuals_k_run;
   S.TKBegin(CudaToroidalState::TK_RESIDUALS);
   if (dd_fp32_env) {
     k_residuals_dd_fp32<<<S.n_config_max, 1, 0, st>>>(
