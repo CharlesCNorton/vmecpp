@@ -8816,6 +8816,11 @@ __global__ void k_scatter_main_and_con_wmma_tf32(
 //
 // Gated by VMECPP_SCATTER_I8OZAKI=1. Tile geometry matches the wmma
 // kernel: mpol <= 12 (4 * mpol <= K_PAD) and nThetaReduced <= 16.
+// LIMBS_T selects the operand width: 8 limbs cover the FP64 mantissa
+// (56 bits); 4 limbs carry 28-bit operands (rel ~4e-9) at half the
+// limb-plane traffic and half the mma work. Launch with 32 * LIMBS_T
+// threads (one band per warp).
+template <int LIMBS_T>
 __global__ void k_scatter_main_and_con_i8ozaki(
     int n_config, int ns_local, int mpol, int nZeta, int nThetaReduced,
     int nThetaEff,
@@ -8834,8 +8839,8 @@ __global__ void k_scatter_main_and_con_i8ozaki(
   constexpr int K_PAD = 48;
   constexpr int M_TILE = 16;
   constexpr int N_TILE = 16;
-  constexpr int LIMBS = 8;
-  constexpr int BANDS = 8;  // p + q in [0, 8); deeper bands < 2^-56
+  constexpr int LIMBS = LIMBS_T;
+  constexpr int BANDS = LIMBS_T;  // p + q in [0, LIMBS); deeper bands truncated
 
   int z = blockIdx.z;
   int config = z / ns_local;
@@ -8984,15 +8989,15 @@ __global__ void k_scatter_main_and_con_i8ozaki(
 #endif
   __syncthreads();
 
-  if (tid < M_TILE * N_TILE) {
-    int l = tid / N_TILE;
-    int n = tid - l * N_TILE;
+  for (int i = tid; i < M_TILE * N_TILE; i += blockDim.x) {
+    int l = i / N_TILE;
+    int n = i - l * N_TILE;
     if (l < nThetaReduced && s_eA[l] != INT_MIN && s_eB[n] != INT_MIN) {
       // Ascending magnitude: deepest band first.
       double acc = 0.0;
       int e_base = s_eA[l] + s_eB[n] + 4;
       for (int band = BANDS - 1; band >= 0; --band) {
-        acc += ldexp((double)s_band[band * M_TILE * N_TILE + tid],
+        acc += ldexp((double)s_band[band * M_TILE * N_TILE + i],
                      e_base - 7 * (band + 2));
       }
       size_t cfg_full = (size_t)config * (size_t)ns_local *
@@ -9177,7 +9182,10 @@ __global__ void k_i8b_row_exp(int n_config, int ns_local, int mpol,
   eY[b] = e;
 }
 
-// Spec limbs, row-major [B, K] per limb plane.
+// Spec limbs, row-major [B, K] per limb plane. LIMBS_T limits the
+// slice to the leading (most-significant) planes; the buffer is sized
+// for eight so the limb mode can change between iterations.
+template <int LIMBS_T>
 __global__ void k_i8b_slice_y(int n_config, int ns_local, int mpol,
                               int nZeta, const double* __restrict__ Y,
                               const int* __restrict__ eY,
@@ -9202,7 +9210,7 @@ __global__ void k_i8b_slice_y(int n_config, int ns_local, int mpol,
   }
   size_t plane = (size_t)B_pad * (size_t)K;
   #pragma unroll
-  for (int pl = 0; pl < 8; ++pl) {
+  for (int pl = 0; pl < LIMBS_T; ++pl) {
     double scaled = r * 128.0;
     int limb = (int)rint(scaled);
     r = scaled - (double)limb;
@@ -9210,10 +9218,16 @@ __global__ void k_i8b_slice_y(int n_config, int ns_local, int mpol,
   }
 }
 
-// Banded s8 GEMM: one block per (64-row stripe, 16-column tile). Eight
-// warps, one band each; bands chain their (p, q) limb pairs into one
-// exact s32 accumulator. The combine scales bands into FP64 and writes
-// the 16 channel arrays directly (a 16-column tile is one poloidal cell).
+// Banded s8 GEMM: one block per (64-row stripe, 16-column tile). One
+// warp per band; bands chain their (p, q) limb pairs into one exact
+// s32 accumulator. The combine scales bands into FP64 and writes the
+// 16 channel arrays directly (a 16-column tile is one poloidal cell).
+// LIMBS_T as in the per-tile kernel: 8 covers the FP64 mantissa, 4
+// halves the staged limb traffic at 28-bit operand width. The W limb
+// planes are built most-significant first, so a 4-limb consumer reads
+// the leading planes of the 8-limb build. Launch with 32 * LIMBS_T
+// threads.
+template <int LIMBS_T>
 __global__ void k_i8b_gemm(
     int n_config, int ns_local, int mpol, int nZeta, int nThetaReduced,
     int nThetaEff, int B_pad,
@@ -9229,8 +9243,8 @@ __global__ void k_i8b_gemm(
     double* __restrict__ lv_e, double* __restrict__ lv_o) {
   constexpr int ROWS = 64;
   constexpr int NT = 16;
-  constexpr int LIMBS = 8;
-  constexpr int BANDS = 8;
+  constexpr int LIMBS = LIMBS_T;
+  constexpr int BANDS = LIMBS_T;
   int K = 16 * mpol;
   int N = 16 * nThetaReduced;
   int row0 = blockIdx.x * ROWS;
@@ -12308,6 +12322,16 @@ static int g_iter_graph_env = -1;
 // through the time-step damping, their trajectories.
 static int g_residuals_k_run = -1;
 
+// int8-Ozaki limb count, run-scoped. VMECPP_SCATTER_I8_LIMBS=4 selects
+// 28-bit operands (four 7-bit limbs, rel ~4e-9) at half the limb-plane
+// traffic; the default 8 covers the FP64 mantissa. Under VMECPP_IR_STAGED
+// the residual phase routes the choice per iteration: 4 limbs above the
+// threshold (descent), 8 below. g_i8_limbs_last tracks the last
+// dispatched width so a mid-run phase transition invalidates the
+// whole-iteration graph, which otherwise replays the captured kernel.
+static int g_i8_limbs_env = -1;
+static int g_i8_limbs_last = 0;
+
 void SetFreeBoundaryRunCuda(int enabled) {
   g_free_boundary_run = (enabled != 0);
 }
@@ -12320,12 +12344,15 @@ void ResetCudaStateForNewVmecRun() {
     const char* env = std::getenv("VMECPP_N_CONFIG_MAX");
     g_n_config_run = (env != nullptr) ? std::max(1, std::atoi(env)) : 1;
   }
-  // The multigrid-upscale, iteration-graph, and residuals-partition
-  // gates re-read with the same per-run scope.
+  // The multigrid-upscale, iteration-graph, residuals-partition, and
+  // int8-limb gates re-read with the same per-run scope.
   g_batch_upscale_env = -1;
   g_batch_upscale_kernel_env = -1;
   g_iter_graph_env = -1;
   g_residuals_k_run = -1;
+  g_i8_limbs_env = -1;
+  g_i8_limbs_last = 0;
+  g_ir_staged = -1;
   g_free_boundary_run = false;
   State().ResetForNewVmecRun();
 }
@@ -13573,6 +13600,59 @@ void FourierToReal3DSymmFastPoloidalCuda(
       scatter_custom_gemm_wmma_env = 0;
       scatter_i8ozaki_env = 0;
     }
+    // Limb width for the int8 paths: run-scoped override
+    // (VMECPP_SCATTER_I8_LIMBS=4), per-iteration phase routing under IR
+    // staging (4-limb descent above the residual threshold, 8 below). A
+    // width change invalidates the whole-iteration graph, the only
+    // capture that contains the forward scatter.
+    int i8_limbs = 8;
+    if (scatter_i8gemm_env || scatter_i8ozaki_env) {
+      if (g_i8_limbs_env < 0) {
+        const char* e = std::getenv("VMECPP_SCATTER_I8_LIMBS");
+        g_i8_limbs_env = (e && std::atoi(e) == 4) ? 4 : 8;
+        if (g_i8_limbs_env != 8) {
+          std::fprintf(stderr, "[fft_toroidal_cuda] int8 scatter limb "
+                               "width 4 (VMECPP_SCATTER_I8_LIMBS=4)\n");
+        }
+      }
+      // Hysteresis around the IR threshold: 8 limbs below it, 4 limbs
+      // only above a decade band, hold the current width inside the
+      // band. Without the band the residual jitters across the
+      // threshold and the width thrashes for several iterations per
+      // crossing. Stage restarts push the residual far above the band,
+      // so every multigrid stage re-enters its 4-limb descent.
+      (void)GetIRPhase();  // ensures init_ir_env ran
+      if (g_ir_staged == 1) {
+        if (g_ir_residual_sum < g_ir_threshold) {
+          i8_limbs = 8;
+        } else if (g_ir_residual_sum > 100.0 * g_ir_threshold) {
+          i8_limbs = 4;
+        } else {
+          i8_limbs = (g_i8_limbs_last != 0) ? g_i8_limbs_last : 4;
+        }
+      } else {
+        i8_limbs = g_i8_limbs_env;
+      }
+      if (g_i8_limbs_last != 0 && g_i8_limbs_last != i8_limbs) {
+        // Drop the whole-iteration graph in place: it captured the
+        // previous width's kernel, and the state mutex is already held
+        // in this scope (InvalidateIterationGraphCuda would self-lock).
+        if (S.iter_graph_exec) {
+          cudaGraphExecDestroy(S.iter_graph_exec);
+          S.iter_graph_exec = nullptr;
+        }
+        if (S.iter_graph) {
+          cudaGraphDestroy(S.iter_graph);
+          S.iter_graph = nullptr;
+        }
+        S.iter_graph_captured = false;
+        S.iter_graph_warmups = 0;
+        std::fprintf(stderr, "[fft_toroidal_cuda] int8 scatter limb "
+                             "width %d -> %d\n",
+                     g_i8_limbs_last, i8_limbs);
+      }
+      g_i8_limbs_last = i8_limbs;
+    }
     // Dispatch order: explicit gate variants first, then v5 default.
     if (scatter_dd_fp32_env || scatter_dd_fp64mul_env ||
         scatter_dd_fp32_ddmul_env || scatter_ozaki_env ||
@@ -13627,21 +13707,38 @@ void FourierToReal3DSymmFastPoloidalCuda(
               S.n_config_max, ns_local, mpol, nZeta, S.d_Y, S.d_i8b_eY);
           cuda_check(cudaGetLastError(), "k_i8b_row_exp launch");
           int total = B_pad * K_g;
-          k_i8b_slice_y<<<(total + wt - 1) / wt, wt, 0, st>>>(
-              S.n_config_max, ns_local, mpol, nZeta, S.d_Y, S.d_i8b_eY,
-              S.d_i8b_Yl, B_pad);
+          if (i8_limbs == 4) {
+            k_i8b_slice_y<4><<<(total + wt - 1) / wt, wt, 0, st>>>(
+                S.n_config_max, ns_local, mpol, nZeta, S.d_Y, S.d_i8b_eY,
+                S.d_i8b_Yl, B_pad);
+          } else {
+            k_i8b_slice_y<8><<<(total + wt - 1) / wt, wt, 0, st>>>(
+                S.n_config_max, ns_local, mpol, nZeta, S.d_Y, S.d_i8b_eY,
+                S.d_i8b_Yl, B_pad);
+          }
           cuda_check(cudaGetLastError(), "k_i8b_slice_y launch");
           dim3 gb(B_pad / 64, nThetaReduced, 1);
-          size_t gs = (size_t)(8 * 64 * 16 + 8 * 16 * 16) +
-                      sizeof(int) * 8 * 64 * 16 + 32;
-          k_i8b_gemm<<<gb, 256, gs, st>>>(
-              S.n_config_max, ns_local, mpol, nZeta, nThetaReduced,
-              nThetaEff, B_pad, S.d_i8b_Yl, S.d_i8b_eY, S.d_i8b_Wl,
-              S.d_i8b_eW,
-              S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
-              S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
-              S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
-              S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+          size_t gs = (size_t)(i8_limbs * 64 * 16 + i8_limbs * 16 * 16) +
+                      sizeof(int) * (size_t)i8_limbs * 64 * 16 + 32;
+          if (i8_limbs == 4) {
+            k_i8b_gemm<4><<<gb, 128, gs, st>>>(
+                S.n_config_max, ns_local, mpol, nZeta, nThetaReduced,
+                nThetaEff, B_pad, S.d_i8b_Yl, S.d_i8b_eY, S.d_i8b_Wl,
+                S.d_i8b_eW,
+                S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
+                S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
+                S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
+                S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+          } else {
+            k_i8b_gemm<8><<<gb, 256, gs, st>>>(
+                S.n_config_max, ns_local, mpol, nZeta, nThetaReduced,
+                nThetaEff, B_pad, S.d_i8b_Yl, S.d_i8b_eY, S.d_i8b_Wl,
+                S.d_i8b_eW,
+                S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
+                S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
+                S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
+                S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+          }
           cuda_check(cudaGetLastError(), "k_i8b_gemm launch");
           const int TPB_RC_G = 32;
           dim3 rcg_blocks((nThetaReduced + TPB_RC_G - 1) / TPB_RC_G,
@@ -13656,24 +13753,39 @@ void FourierToReal3DSymmFastPoloidalCuda(
         }
       } else if (scatter_i8ozaki_env) {
         // int8 tensor-core dispatch with exact s32 accumulation; the
-        // FP64 output needs no scalar recovery pass.
-        const int TPB_I8 = 256;
+        // FP64 output needs no scalar recovery pass. One warp per band.
+        const int TPB_I8 = 32 * i8_limbs;
         dim3 i8_blocks(1, nZeta, n_cfg * ns_local);
         dim3 i8_tpb(TPB_I8, 1, 1);
         size_t i8_smem =
             sizeof(double) * ((size_t)kBatch * (size_t)mpol +
                               4 * (size_t)mpol * (size_t)nThetaReduced +
                               (size_t)mpol) +
-            (size_t)(8 * 16 * 48 + 8 * 48 * 16) +
-            sizeof(int) * (8 * 16 * 16 + 16 + 16) + 32;
-        k_scatter_main_and_con_i8ozaki<<<i8_blocks, i8_tpb, i8_smem, st>>>(
-            S.n_config_max, ns_local, mpol, nZeta, nThetaReduced, nThetaEff,
-            S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
-            S.d_xmpq, S.d_sqrtSF,
-            S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
-            S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
-            S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
-            S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+            (size_t)(i8_limbs * 16 * 48 + i8_limbs * 48 * 16) +
+            sizeof(int) * ((size_t)i8_limbs * 16 * 16 + 16 + 16) + 32;
+        if (i8_limbs == 4) {
+          k_scatter_main_and_con_i8ozaki<4>
+              <<<i8_blocks, i8_tpb, i8_smem, st>>>(
+              S.n_config_max, ns_local, mpol, nZeta, nThetaReduced,
+              nThetaEff,
+              S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
+              S.d_xmpq, S.d_sqrtSF,
+              S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
+              S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
+              S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
+              S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+        } else {
+          k_scatter_main_and_con_i8ozaki<8>
+              <<<i8_blocks, i8_tpb, i8_smem, st>>>(
+              S.n_config_max, ns_local, mpol, nZeta, nThetaReduced,
+              nThetaEff,
+              S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
+              S.d_xmpq, S.d_sqrtSF,
+              S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
+              S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
+              S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
+              S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o);
+        }
         cuda_check(cudaGetLastError(),
                    "k_scatter_main_and_con_i8ozaki launch");
         const int TPB_L_RC_I8 = 32;

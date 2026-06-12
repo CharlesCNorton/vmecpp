@@ -206,6 +206,23 @@ def test_ozaki3_scatter_converges_in_family():
     assert out.wout.aspect == pytest.approx(CMA_ASPECT, rel=1e-12)
 
 
+def test_i8gemm_staged_limb_descent_converges_in_family():
+    # The batched int8-Ozaki scatter under the staged limb descent:
+    # 4-limb operands above the IR residual threshold, 8 below, with
+    # the width transition (and its whole-iteration-graph drop)
+    # exercised mid-run at each multigrid stage.
+    _single_env()
+    os.environ["VMECPP_SCATTER_I8GEMM"] = "1"
+    os.environ["VMECPP_IR_STAGED"] = "1"
+    try:
+        out = vmecpp.run(_cma_input(), max_threads=1, verbose=False)
+    finally:
+        os.environ.pop("VMECPP_SCATTER_I8GEMM", None)
+        os.environ.pop("VMECPP_IR_STAGED", None)
+    assert out.wout.volume == pytest.approx(CMA_VOLUME, rel=1e-12)
+    assert out.wout.aspect == pytest.approx(CMA_ASPECT, rel=1e-12)
+
+
 def test_free_boundary_multigrid_stage_transition():
     # The multigrid stage transition with the vacuum pressure already
     # active reallocates the device buffers mid-run; the constraint
