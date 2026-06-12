@@ -242,6 +242,11 @@ definitions in `fft_toroidal_cuda.cu`.
 | `VMECPP_KERNEL_TIMING_PATH` | Dump destination. Default `/tmp/vmecpp_kernel_timing.log`. |
 | `VMECPP_PHASE_TIMING_PATH` | Destination for the phase-timer report. Default `/tmp/vmecpp_phase_timing.txt`. |
 | `VMECPP_FFT_DUMP` | One-shot dump of the cuFFT input/output plus the radix-8x3 recomputation on the same input. Requires `nZeta = 24` (the radix kernel's coverage); skipped otherwise with a notice. |
+| `VMECPP_CPU_ORDER_BCONTRA` | Serial ascending-kl accumulation of the jvPlasma and avg_guu_gsqrt reductions, matching the host loop bit for bit. Trajectory-comparison diagnostic against the CPU build. |
+| `VMECPP_CPU_ORDER_PRECOND` | Host-order serial accumulation of the radial-preconditioner matrix elements, including the host's division forms. Trajectory-comparison diagnostic. |
+| `VMECPP_CPU_ORDER_RZSOLVE` | Serial Thomas elimination in the host order instead of parallel cyclic reduction. Trajectory-comparison diagnostic. |
+| `VMECPP_DUMP_TCON` | One-shot full-precision print of the first constraint-multiplier profile. |
+| `VMECPP_DUMP_GCON` | One-shot print of the effective-constraint-force checksum and the per-surface sums of the dealiased constraint force. |
 | `VMECPP_DUMP_SPECS` | One-shot dump of the staged spectral input (configuration 0) for distinct-vs-broadcast bit-equivalence checks. |
 | `VMECPP_STATE_DUMP_ITERS` | Comma-separated `iter2` values at which the full batched decomposed-x state is written to disk. |
 | `VMECPP_STATE_DUMP_F` / `VMECPP_STATE_DUMP_PROF` | Adds the decomposed forces / per-configuration radial profiles to the state dumps. |

@@ -3697,6 +3697,7 @@ __global__ void k_pm_half_reductions(int n_config, int ns_local, int ns_h,
                                        int nZnT, int nThetaEff,
                                        double pFactor, double deltaS,
                                        int nsMinH, int nsMinF1,
+                                       int serial_order,
                                        const double* __restrict__ r12,
                                        const double* __restrict__ totalPressure,
                                        const double* __restrict__ tau,
@@ -3721,17 +3722,57 @@ __global__ void k_pm_half_reductions(int n_config, int ns_local, int ns_h,
   size_t cfg_ax   = (size_t)config * (size_t)ns_h * 4;
   size_t cfg_bx   = (size_t)config * (size_t)ns_h * 3;
   size_t cfg_cx   = (size_t)config * (size_t)ns_h;
+  double sH = sqrtSH[jH];
+  int jH_global = jH + nsMinH;
+  int jF_in_local = jH_global - nsMinF1;
+  int jF_out_local = jF_in_local + 1;
+  if (serial_order) {
+    // Diagnostic: the host loop's ascending-kl order and arithmetic
+    // (divisions by sqrtSH rather than reciprocal multiplies), so the
+    // matrix elements match the host bit for bit.
+    if (threadIdx.x == 0) {
+      double ax0 = 0.0, ax1 = 0.0, ax2 = 0.0, ax3 = 0.0;
+      double bx0 = 0.0, bx1 = 0.0, bx2 = 0.0, cxv = 0.0;
+      for (int kl = 0; kl < nZnT; ++kl) {
+        size_t iHalf = cfg_half + (size_t)jH * (size_t)nZnT + (size_t)kl;
+        size_t iFull_0 = cfg_full + (size_t)jF_in_local * (size_t)nZnT + kl;
+        size_t iFull_1 = cfg_full + (size_t)jF_out_local * (size_t)nZnT + kl;
+        int l = kl % nThetaEff;
+        double pTau = pFactor * r12[iHalf] * totalPressure[iHalf] /
+                      tau[iHalf] * wInt[l];
+        double t1a = xu12[iHalf] / deltaS;
+        double t2a = 0.25 * (xu_e[iFull_1] / sH + xu_o[iFull_1]) / sH;
+        double t3a = 0.25 * (xu_e[iFull_0] / sH + xu_o[iFull_0]) / sH;
+        ax0 += pTau * t1a * t1a;
+        ax1 += pTau * (t1a + t2a) * (-t1a + t3a);
+        ax2 += pTau * (t1a + t2a) * (t1a + t2a);
+        ax3 += pTau * (-t1a + t3a) * (-t1a + t3a);
+        double t1b = 0.5 * (xs[iHalf] + 0.5 / sH * x1_o[iFull_1]);
+        double t2b = 0.5 * (xs[iHalf] + 0.5 / sH * x1_o[iFull_0]);
+        bx0 += pTau * t1b * t2b;
+        bx1 += pTau * t1b * t1b;
+        bx2 += pTau * t2b * t2b;
+        cxv += 0.25 * pFactor * bsupv[iHalf] * bsupv[iHalf] *
+               gsqrt[iHalf] * wInt[l];
+      }
+      ax_scratch[cfg_ax + jH * 4 + 0] = ax0;
+      ax_scratch[cfg_ax + jH * 4 + 1] = ax1;
+      ax_scratch[cfg_ax + jH * 4 + 2] = ax2;
+      ax_scratch[cfg_ax + jH * 4 + 3] = ax3;
+      bx_scratch[cfg_bx + jH * 3 + 0] = bx0;
+      bx_scratch[cfg_bx + jH * 3 + 1] = bx1;
+      bx_scratch[cfg_bx + jH * 3 + 2] = bx2;
+      cx_scratch[cfg_cx + jH] = cxv;
+    }
+    return;
+  }
   __shared__ double s_ax0[32], s_ax1[32], s_ax2[32], s_ax3[32];
   __shared__ double s_bx0[32], s_bx1[32], s_bx2[32];
   __shared__ double s_cx[32];
   double ax0 = 0.0, ax1 = 0.0, ax2 = 0.0, ax3 = 0.0;
   double bx0 = 0.0, bx1 = 0.0, bx2 = 0.0;
   double cxv = 0.0;
-  double sH = sqrtSH[jH];
   double invSH = 1.0 / sH;
-  int jH_global = jH + nsMinH;
-  int jF_in_local = jH_global - nsMinF1;
-  int jF_out_local = jF_in_local + 1;
   for (int kl = threadIdx.x; kl < nZnT; kl += blockDim.x) {
     size_t iHalf = cfg_half + (size_t)jH * (size_t)nZnT + (size_t)kl;
     size_t iFull_0 = cfg_full + (size_t)jF_in_local  * (size_t)nZnT + (size_t)kl;
@@ -5253,6 +5294,7 @@ __global__ void k_bcontra_bsupuv(
 // jvPlasma/avg_guu_gsqrt per-config profile.
 __global__ void k_bcontra_jvplasma_reduce(
     int n_config, int ns_h, int nZnT, int nThetaEff, bool lthreed,
+    int serial_order,
     const double* __restrict__ guu, const double* __restrict__ guv,
     const double* __restrict__ bsupu, const double* __restrict__ bsupv,
     const double* __restrict__ gsqrt, const double* __restrict__ wInt,
@@ -5263,6 +5305,27 @@ __global__ void k_bcontra_jvplasma_reduce(
   if (jH_local >= ns_h) return;
   size_t cfg_half = (size_t)config * (size_t)ns_h * (size_t)nZnT;
   size_t cfg_prof = (size_t)config * (size_t)ns_h;
+  if (serial_order) {
+    // Diagnostic: accumulate in the CPU loop's ascending-kl order so the
+    // sums match the host bit for bit.
+    if (threadIdx.x == 0) {
+      double jv = 0.0, avg = 0.0;
+      for (int kl = 0; kl < nZnT; ++kl) {
+        size_t i = cfg_half + (size_t)jH_local * (size_t)nZnT + (size_t)kl;
+        int l = kl % nThetaEff;
+        double w = wInt[l];
+        double term = guu[i] * bsupu[i];
+        if (lthreed) {
+          term += guv[i] * bsupv[i];
+        }
+        jv += term * w;
+        avg += guu[i] / gsqrt[i] * w;
+      }
+      jvPlasma[cfg_prof + jH_local] = jv;
+      avg_guu_gsqrt[cfg_prof + jH_local] = avg;
+    }
+    return;
+  }
   __shared__ double s_jv[32];
   __shared__ double s_avg[32];
   double acc_jv = 0.0, acc_avg = 0.0;
@@ -9502,6 +9565,49 @@ __global__ void k_apply_rz_pcr(int n_config, int mnsize, int ns_total, int num_b
     int gi = tid + j0;
     for (int ib = 0; ib < num_basis; ++ib) {
       c_inout[cfg_c + (size_t)((mn * num_basis + ib) * ns_total + gi)] = s_c[tid * 2 + ib] / s_d[tid];
+    }
+  }
+}
+
+// k_apply_rz_thomas_serial: serial Thomas elimination per (cfg, mn) row in
+// the host loop's exact order and association (TridiagonalSolveSerial),
+// for trajectory comparisons against the CPU build. One thread per row;
+// the mutable elimination ratios live in local memory (ns_total <= 1024
+// by the shape guard). Diagnostic path, gated by
+// VMECPP_CPU_ORDER_RZSOLVE=1.
+__global__ void k_apply_rz_thomas_serial(
+    int n_config, int mnsize, int ns_total, int num_basis,
+    const int* __restrict__ jMin, int jMax,
+    const double* __restrict__ a_in, const double* __restrict__ d_in,
+    const double* __restrict__ b_in, double* __restrict__ c_inout,
+    const std::uint8_t* __restrict__ d_active_per_cfg) {
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  int config = idx / mnsize;
+  int mn = idx - config * mnsize;
+  if (config >= n_config) return;
+  if (d_active_per_cfg && !d_active_per_cfg[config]) return;
+  int j0 = jMin[mn];
+  if (jMax - j0 <= 0) return;
+  size_t row = ((size_t)config * (size_t)mnsize + (size_t)mn) *
+               (size_t)ns_total;
+  size_t cfg_c = (size_t)config * (size_t)mnsize * (size_t)num_basis *
+                 (size_t)ns_total;
+  double a_loc[1024];
+  for (int j = j0; j < jMax; ++j) a_loc[j] = a_in[row + j];
+  a_loc[j0] /= d_in[row + j0];
+  for (int j = j0 + 1; j < jMax - 1; ++j) {
+    const double denominator = d_in[row + j] - a_loc[j - 1] * b_in[row + j];
+    a_loc[j] /= denominator;
+  }
+  for (int ib = 0; ib < num_basis; ++ib) {
+    double* c = c_inout + cfg_c + (size_t)(mn * num_basis + ib) * ns_total;
+    c[j0] /= d_in[row + j0];
+    for (int j = j0 + 1; j < jMax; ++j) {
+      const double denominator = d_in[row + j] - a_loc[j - 1] * b_in[row + j];
+      c[j] = (c[j] - c[j - 1] * b_in[row + j]) / denominator;
+    }
+    for (int j = jMax - 2; j > j0 - 1; --j) {
+      c[j] -= a_loc[j] * c[j + 1];
     }
   }
 }
@@ -15083,11 +15189,19 @@ void ComputeBContraCuda(
 
   // Stage 3 (ncurr==1 only): jvPlasma + avg_guu_gsqrt reductions.
   if (ncurr == 1) {
+    // VMECPP_CPU_ORDER_BCONTRA=1: serial ascending-kl accumulation
+    // matching the host loop bit for bit (diagnostic for trajectory
+    // comparisons against the CPU build).
+    static const int bcontra_serial_env = []() {
+      const char* e = std::getenv("VMECPP_CPU_ORDER_BCONTRA");
+      return (e && std::atoi(e) > 0) ? 1 : 0;
+    }();
     const int TPB = 32;
     dim3 blocks(ns_h, 1, S.n_config_max);
     dim3 tpb(TPB, 1, 1);
     k_bcontra_jvplasma_reduce<<<blocks, tpb, 0, S.stream>>>(
         S.n_config_max, ns_h, nZnT, nThetaEff, s.lthreed,
+        bcontra_serial_env,
         S.d_guu, S.d_guv, S.d_bsupu, S.d_bsupv,
         S.d_gsqrt, S.d_wInt, S.d_jvPlasma, S.d_avg_guu_gsqrt);
     cuda_check(cudaGetLastError(), "k_bcontra_jvplasma_reduce launch");
@@ -15212,13 +15326,20 @@ void ComputePreconditioningMatrixCuda(
   // Batched execution: each pm kernel gains n_config dim.
   double pFactor = -4.0;
   {
+    // VMECPP_CPU_ORDER_PRECOND=1: host-order serial accumulation of the
+    // matrix elements (diagnostic for trajectory comparisons against the
+    // CPU build).
+    static const int pm_serial_env = []() {
+      const char* e = std::getenv("VMECPP_CPU_ORDER_PRECOND");
+      return (e && std::atoi(e) > 0) ? 1 : 0;
+    }();
     const int TPB = 32;
     dim3 b(ns_h, 1, S.n_config_max); dim3 t(TPB, 1, 1);
     // Read xs/xu12/xu_e/xu_o/x1_o from the device buffers directly, not the
     // d_pm_* H2D mirrors (which are now stale/unused on the H2D-skipped path).
     k_pm_half_reductions<<<b, t, 0, S.stream>>>(
         S.n_config_max, ns_local, ns_h, nZnT, nThetaEff, pFactor, deltaS,
-        r.nsMinH, r.nsMinF1,
+        r.nsMinH, r.nsMinF1, pm_serial_env,
         S.d_r12, S.d_totalPressure, S.d_tau, S.d_wInt,
         d_xu12, d_xu_e, d_xu_o, d_x1_o, d_xs,
         S.d_sqrtSH, S.d_bsupv, S.d_gsqrt,
@@ -15934,10 +16055,14 @@ void ConstraintForceMultiplierCuda(
   // LCFS halving on device: previously this was a host operation that never
   // propagated back to d_tcon, leaving DeAliasConstraintForceCuda to read
   // un-halved values. One-thread kernel keeps the halved value on device.
+  // The halved entry is the LCFS row of the con-sized profile
+  // (nsMaxF1 - 1 - nsMinF), matching the host indexing; on fixed-boundary
+  // runs that row sits one past the force rows the dealiasing reads, so
+  // the halving must not land on the outermost force row instead.
   // Batched execution: launch n_config_max blocks; d_tcon's per-config stride is
   // ns_con_local (allocated as n_config_max * ns_con_local).
-  if (r.nsMaxF1 == fc.ns && ns_force_local >= 2) {
-    int last = ns_force_local - 1;
+  if (r.nsMaxF1 == fc.ns && ns_con_local >= 2) {
+    int last = (r.nsMaxF1 - 1) - r.nsMinF;
     k_halve_tcon_lcfs<<<S.n_config_max, 1, 0, S.stream>>>(
         S.n_config_max, ns_con_local, last, S.d_tcon);
     cuda_check(cudaGetLastError(), "k_halve_tcon_lcfs launch");
@@ -15949,6 +16074,24 @@ void ConstraintForceMultiplierCuda(
   cuda_check(cudaMemcpyAsync(tcon_out.data(), S.d_tcon,
                               sizeof(double) * ns_force_local,
                               cudaMemcpyDeviceToHost, S.stream), "d2h tcon");
+
+  // VMECPP_DUMP_TCON=1: print the first computed profile at full
+  // precision (diagnostic for CPU-vs-CUDA trajectory comparisons).
+  static int dump_tcon_env = -1;
+  if (dump_tcon_env < 0) {
+    const char* e = std::getenv("VMECPP_DUMP_TCON");
+    dump_tcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
+  }
+  if (dump_tcon_env) {
+    static int dumped = 0;
+    if (!dumped) {
+      dumped = 1;
+      cuda_check(cudaStreamSynchronize(S.stream), "tcon dump sync");
+      for (int j = 1; j < std::min(9, ns_force_local); ++j) {
+        std::fprintf(stderr, "[TCON] j=%d %.17g\n", j, tcon_out[j]);
+      }
+    }
+  }
 }
 
 // ============================================================================
@@ -15984,6 +16127,30 @@ void EffectiveConstraintForceCuda(
   cuda_check(cudaGetLastError(), "k_effective_constraint_force launch");
   S.TKEnd(CudaToroidalState::TK_EFFECTIVE_CONSTRAINT);
   DiagCfg01DiffCuda(S.d_gConEff, ns_con_local * nZnT, "eff:gConEff");
+
+  // VMECPP_DUMP_GCON=1: print a serial checksum of gConEff (diagnostic
+  // for CPU-vs-CUDA trajectory comparisons).
+  static int dump_gcon_env = -1;
+  if (dump_gcon_env < 0) {
+    const char* e = std::getenv("VMECPP_DUMP_GCON");
+    dump_gcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
+  }
+  if (dump_gcon_env) {
+    static int dumped = 0;
+    if (!dumped) {
+      dumped = 1;
+      std::vector<double> h((size_t)ns_con_local * nZnT, 0.0);
+      cuda_check(cudaMemcpyAsync(h.data(), S.d_gConEff,
+                                 sizeof(double) * h.size(),
+                                 cudaMemcpyDeviceToHost, S.stream),
+                 "d2h gConEff dump");
+      cuda_check(cudaStreamSynchronize(S.stream), "gConEff dump sync");
+      double sum = 0.0;
+      for (double v : h) sum += std::fabs(v);
+      std::fprintf(stderr, "[GCONEFF] sum=%.17g v[1,0..3]=%.17g %.17g %.17g %.17g\n",
+                   sum, h[nZnT], h[nZnT + 1], h[nZnT + 2], h[nZnT + 3]);
+    }
+  }
 
   // d_gConEff stays on device; DeAliasConstraintForceCuda reads it directly.
   (void)gConEff_out;
@@ -16535,6 +16702,20 @@ int ApplyRZPreconditionerCuda(
           "for k_apply_rz_pcr\n");
     }
   }
+  // VMECPP_CPU_ORDER_RZSOLVE=1: serial Thomas elimination in the host
+  // order instead of parallel cyclic reduction (diagnostic; the two
+  // algorithms round differently, so the preconditioned forces differ
+  // between them at the solve's conditioning level).
+  static int rz_serial_env = -1;
+  if (rz_serial_env < 0) {
+    const char* e = std::getenv("VMECPP_CPU_ORDER_RZSOLVE");
+    rz_serial_env = (e && std::atoi(e) > 0) ? 1 : 0;
+    if (rz_serial_env) {
+      std::fprintf(stderr,
+          "[fft_toroidal_cuda] VMECPP_CPU_ORDER_RZSOLVE=1: serial Thomas "
+          "RZ solve active\n");
+    }
+  }
 
   S.TKBegin(CudaToroidalState::TK_APPLY_RZ);
 
@@ -16620,6 +16801,24 @@ int ApplyRZPreconditionerCuda(
         S.d_rz_x_saved_Z, d_cZ, d_cZ,
         S.d_active_per_cfg);
     cuda_check(cudaGetLastError(), "k_rz_add_correction Z");
+  } else if (rz_serial_env) {
+    // VMECPP_CPU_ORDER_RZSOLVE=1: serial Thomas elimination in the host
+    // order, one thread per mode row (diagnostic for trajectory
+    // comparisons against the CPU build).
+    const int TPB_TH = 64;
+    int total_rows = S.n_config_max * mnsize;
+    dim3 thb((total_rows + TPB_TH - 1) / TPB_TH, 1, 1);
+    dim3 tht(TPB_TH, 1, 1);
+    k_apply_rz_thomas_serial<<<thb, tht, 0, st>>>(
+        S.n_config_max, mnsize, ns_total, num_basis, d_jMin, jMaxRZ,
+        S.d_rz_aR, S.d_rz_dR, S.d_rz_bR, d_cR,
+        S.d_active_per_cfg);
+    cuda_check(cudaGetLastError(), "k_thomas_serial R");
+    k_apply_rz_thomas_serial<<<thb, tht, 0, st>>>(
+        S.n_config_max, mnsize, ns_total, num_basis, d_jMin, jMaxRZ,
+        S.d_rz_aZ, S.d_rz_dZ, S.d_rz_bZ, d_cZ,
+        S.d_active_per_cfg);
+    cuda_check(cudaGetLastError(), "k_thomas_serial Z");
   } else {
     // Default FP64 PCR path.
     k_apply_rz_pcr<<<pcr_grid, pcr_threads, pcr_smem, st>>>(
@@ -16806,6 +17005,32 @@ void DeAliasConstraintForceCuda(
     S.TKEnd(CudaToroidalState::TK_DEALIAS);
   }
   DiagCfg01DiffCuda(S.d_gCon, ns_con_local * nZeta * nThetaEff, "dealias:gCon");
+
+  // VMECPP_DUMP_GCON=1: print a serial checksum of the dealiased gCon
+  // (diagnostic for CPU-vs-CUDA trajectory comparisons).
+  static int dump_gcon_env = -1;
+  if (dump_gcon_env < 0) {
+    const char* e = std::getenv("VMECPP_DUMP_GCON");
+    dump_gcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
+  }
+  if (dump_gcon_env) {
+    static int dumped = 0;
+    if (!dumped) {
+      dumped = 1;
+      const int nZnT = nZeta * nThetaEff;
+      std::vector<double> h((size_t)ns_con_local * nZnT, 0.0);
+      cuda_check(cudaMemcpyAsync(h.data(), S.d_gCon,
+                                 sizeof(double) * h.size(),
+                                 cudaMemcpyDeviceToHost, st),
+                 "d2h gCon dump");
+      cuda_check(cudaStreamSynchronize(st), "gCon dump sync");
+      for (int j = 0; j < ns_force_local; ++j) {
+        double rs = 0.0;
+        for (int i = 0; i < nZnT; ++i) rs += std::fabs(h[(size_t)j * nZnT + i]);
+        std::fprintf(stderr, "[GCONROW] j=%d %.17g\n", j, rs);
+      }
+    }
+  }
 
   // The dealiased constraint-force buffer d_gCon remains resident on
   // device and is consumed in place by the downstream
