@@ -1496,7 +1496,7 @@ absl::StatusOr<bool> IdealMhdModel::update(
   // buffers; the host m_decomposed_f shadow therefore has no consumer
   // within the iteration body and the synchronous device-to-host
   // transfer that maintained it is unnecessary. The FlushDecomposedToHostCuda
-  // function itself is retained in fft_toroidal_cuda.cu for diagnostic
+  // function itself is retained in fft_toroidal_cuda_io.cu for diagnostic
   // use. FlushForOutputQuantitiesCuda remains hoisted to Vmec::run, where
   // it performs the consolidated end-of-iteration flush.
 

@@ -73,7 +73,11 @@ through the full multigrid ramp:
   floating-point summation-order differences in reductions that are
   documented at each kernel.
 - Iteration counts, restart-reason sequences, and multigrid stage
-  transitions match the CPU trajectory.
+  transitions match the CPU trajectory. On inputs that trigger mid-run
+  bad-Jacobian restarts, the timing of the restart events is sensitive
+  to the documented drift, so iteration counts there match approximately
+  rather than exactly (W7-X converges in 3146 iterations against the
+  CPU's 2954, to the same equilibrium).
 
 On free-boundary runs the boundary itself responds to the vacuum field
 through the drift-sensitive trajectory (the vacuum-pressure activation
@@ -85,8 +89,8 @@ Reductions that must match the CPU bit-for-bit (the residual triples that
 feed the time-step controller and the convergence gate) use serial or
 order-preserving device implementations; reductions covered by the drift
 tolerance (for example the differential volume under the fused
-atomicAdd kernel) are documented as such at their definitions in
-`fft_toroidal_cuda.cu`.
+atomicAdd kernel) are documented as such at their kernel definitions in
+`fft_toroidal_cuda_kernels.cu`.
 
 ## Batched execution
 
@@ -213,9 +217,10 @@ bit-exact `aspect_ratio` contract.
 
 ### Mixed-precision and alternate-FFT experiments (default OFF)
 
-Measured outcomes per gate. The DD-pair primitives, Ozaki-slice
-multiplications, and Carson-Higham refinement are documented at their
-definitions in `fft_toroidal_cuda.cu`.
+Measured outcomes per gate. The DD-pair primitives and Ozaki-slice
+multiplications are documented at their definitions in
+`fft_toroidal_cuda_common.cuh`, the Carson-Higham refinement at its
+kernels in `fft_toroidal_cuda_kernels.cu`.
 
 | Variable | Outcome |
 |---|---|
