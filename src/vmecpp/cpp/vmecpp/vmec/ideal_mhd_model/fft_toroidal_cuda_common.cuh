@@ -418,6 +418,7 @@ long long CudaBudgetRawBytes(long long n_cfg, long long ns, long long mpol,
 // (defined in fft_toroidal_cuda_state.cu).
 extern bool g_free_boundary_run;
 extern bool g_vacuum_edge_run;
+extern bool g_sync_elide_run;
 
 // =========================================================================
 // Process-static CUDA state

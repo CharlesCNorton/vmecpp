@@ -720,14 +720,13 @@ void PerformTimeStepCuda(
   // Under sync elision the host fac/b1 are computed from stale residuals
   // mid-window, so the device controller is authoritative for every
   // iteration (boundaries included, keeping the device ring continuous)
-  // at any n_config.
-  static int sync_elide_mode = -1;
-  if (sync_elide_mode < 0) {
-    const char* e = std::getenv("VMECPP_SYNC_ELIDE");
-    sync_elide_mode = (e && std::atoi(e) > 0) ? 1 : 0;
-  }
+  // at any n_config. The gate reads the run-scoped elision flag staged
+  // by Vmec::Evolve: a process-lifetime latch on the environment value
+  // would keep the device controller selected in later runs of the same
+  // process after an elided run, shifting their trajectories by the
+  // controller's arithmetic family.
   const double* d_fac_b1_for_step = nullptr;
-  if ((percfg_ts_env > 0 && S.n_config_max > 1) || sync_elide_mode > 0) {
+  if ((percfg_ts_env > 0 && S.n_config_max > 1) || g_sync_elide_run) {
     S.EnsureTimestepBuffers(time_step);
     S.StageFnorm1(fnorm1);
     // Reset the ring on the same iterations the host controller does
@@ -1081,6 +1080,8 @@ void SetSyncElideIterCuda(int elide) {
   auto& S = State();
   S.sync_elide_iter = elide;
 }
+
+bool SyncElidedIterCuda() { return State().sync_elide_iter != 0; }
 
 double ComputeForceNorm1FromPtsXCuda(
     int ns_local, int mpol, int ntor, bool lthreed,

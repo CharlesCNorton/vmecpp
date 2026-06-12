@@ -149,6 +149,17 @@ bool g_vacuum_edge_run = false;
 
 void SetVacuumEdgeCuda(int active) { g_vacuum_edge_run = (active != 0); }
 
+// Run-level sync-elision flag (VMECPP_SYNC_ELIDE=K with K > 0), set by
+// Vmec::Evolve when the run's K resolves. Distinct from the
+// per-iteration sync_elide_iter flag: the free-boundary vacuum block
+// consults this one to force full NESTOR updates at the window
+// boundaries, where the partial-update cadence has no meaning.
+bool g_sync_elide_run = false;
+
+void SetSyncElideRunCuda(int active) { g_sync_elide_run = (active != 0); }
+
+bool SyncElideRunActiveCuda() { return g_sync_elide_run; }
+
 // Whole-iteration graph gate (VMECPP_ITER_GRAPH), run-scoped like the
 // other gates: re-read at the start of every Vmec::run.
 int g_iter_graph_env = -1;
@@ -193,6 +204,7 @@ void ResetCudaStateForNewVmecRun() {
   g_i8_limbs_last = 0;
   g_ir_staged = -1;
   g_free_boundary_run = false;
+  g_sync_elide_run = false;
   State().ResetForNewVmecRun();
 }
 

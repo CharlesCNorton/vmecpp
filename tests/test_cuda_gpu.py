@@ -335,6 +335,45 @@ def test_free_boundary_distinct_two_boundaries():
     assert outs[1].wout.volume > outs[0].wout.volume
 
 
+def test_free_boundary_sync_elision_converges():
+    # Free-boundary sync elision: iterations run live until the vacuum
+    # contribution is fully active, then the scalar sync sites elide
+    # with the device time-step controller authoritative and the
+    # convergence gate on the K-boundaries, while the vacuum block keeps
+    # its per-iteration cadence. The converged equilibria land in the
+    # documented free-boundary drift family: both cth-like forms against
+    # their committed references, the elided run against the live run,
+    # and a broadcast batch under elision against the elided single run.
+    _single_env()
+    vi = vmecpp.VmecInput.from_file(TEST_DATA_DIR / "cth_like_free_bdy.json")
+    vi.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
+    live = vmecpp.run(vi, max_threads=1, verbose=False)
+    os.environ["VMECPP_SYNC_ELIDE"] = "25"
+    try:
+        elided = vmecpp.run(vi, max_threads=1, verbose=False)
+        vi_mg = vmecpp.VmecInput.from_file(
+            TEST_DATA_DIR / "cth_like_free_bdy_multigrid.json"
+        )
+        vi_mg.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
+        elided_mg = vmecpp.run(vi_mg, max_threads=1, verbose=False)
+        outs = _vmecpp.run_batched_gpu(
+            [vi._to_cpp_vmecindata()] * 2,
+            max_threads=1,
+            verbose=_vmecpp.OutputMode.SILENT,
+        )
+    finally:
+        os.environ.pop("VMECPP_SYNC_ELIDE", None)
+    assert elided.wout.volume == pytest.approx(0.307272962641336, rel=1e-4)
+    assert elided.wout.aspect == pytest.approx(5.43497448141081, rel=5e-6)
+    assert elided.wout.wb == pytest.approx(0.00128358507023996, rel=5e-6)
+    assert elided.wout.volume == pytest.approx(live.wout.volume, rel=1e-4)
+    assert elided.wout.wb == pytest.approx(live.wout.wb, rel=5e-6)
+    assert elided_mg.wout.volume == pytest.approx(0.307720974219842, rel=1e-4)
+    assert elided_mg.wout.wb == pytest.approx(0.00128356726624431, rel=1e-5)
+    assert len(outs) == 1
+    assert outs[0].wout.volume == pytest.approx(elided.wout.volume, rel=1e-10)
+
+
 def test_fixed_then_free_boundary_one_process():
     # A fixed-boundary run followed by a free-boundary run in the same
     # process: the vacuum block's host-side consumers (the edge-pressure

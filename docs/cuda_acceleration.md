@@ -129,11 +129,30 @@ device, where a kernel applies the vacuum edge force to the LCFS row
 ahead of the constraint assembly. The rCon0/zCon0 turn-off decay runs
 as a device kernel.
 
-The segment and whole-iteration CUDA graphs and the sync-elision window
-are disabled on free-boundary runs: every vacuum iteration synchronizes
-the stream for the NESTOR call, and the edge-force kernel toggles with
-the vacuum pressure state, which would invalidate a captured kernel
-sequence.
+The segment and whole-iteration CUDA graphs are disabled on
+free-boundary runs: the edge-force kernel toggles with the vacuum
+pressure state, which would invalidate a captured kernel sequence.
+
+Sync elision (`VMECPP_SYNC_ELIDE=K`) covers free-boundary runs.
+Iterations run live until the vacuum state machine reaches its active
+state, so the activation check reads fresh residuals and the soft-start
+restart replays the live sequence. Once active, the elision covers the
+per-iteration scalar sync sites (the tau extrema, the residual triples,
+the plasma volume) with the device time-step controller authoritative
+and the convergence gate on the K-boundaries, while the vacuum block
+(geometry flush, host triplet, NESTOR solve, edge-pressure staging)
+keeps its per-iteration cadence and arithmetic. The converged outputs
+sit in the documented free-boundary drift family.
+
+The vacuum block does not join the elision window: the NESTOR response
+must track the boundary every iteration. Running the vacuum solve only
+on the K-boundaries leaves the iteration orbiting its window-stale
+vacuum target instead of converging (the invariant force residuals
+floor around 1e-4 on the cth-like case at K = 25 while the
+preconditioned residuals keep descending), and rebuilding the staged
+edge force on the device from the current LCFS geometry between
+boundaries does not close the orbit either; both forms were measured
+and rejected.
 
 ## Restart and state backup
 
@@ -210,7 +229,7 @@ bit-exact `aspect_ratio` contract.
 
 | Variable | Effect |
 |---|---|
-| `VMECPP_SYNC_ELIDE` | `=K`: K-window sync elision. Per-iteration scalar D2H + stream syncs (tau extrema, residual triples, plasma volume) are skipped on non-boundary iterations; the device time-step controller is authoritative and the convergence gate and restart bookkeeping evaluate every K-th iteration. `K=25` aligns with the preconditioner cadence. Device-state backups move to the same cadence, so a bad-Jacobian event rewinds at most K-1 iterations. |
+| `VMECPP_SYNC_ELIDE` | `=K`: K-window sync elision. Per-iteration scalar D2H + stream syncs (tau extrema, residual triples, plasma volume) are skipped on non-boundary iterations; the device time-step controller is authoritative and the convergence gate and restart bookkeeping evaluate every K-th iteration. `K=25` aligns with the preconditioner cadence. Device-state backups move to the same cadence, so a bad-Jacobian event rewinds at most K-1 iterations. Free-boundary runs are covered: iterations run live until the vacuum contribution is fully active, and the vacuum block keeps its per-iteration cadence throughout (see the free-boundary section). |
 | `VMECPP_RESIDUALS_DEFER` | Deferred-sync residuals: the iteration consumes one-iteration-stale residual values, eliminating a per-iteration sync stall. Within 10x ftolv the value is force-synced so the gate never fires on a stale read. |
 | `VMECPP_ITER_GRAPH` | Whole-iteration CUDA graph. With sync elision active, each captured elided iteration replays as one `cudaGraphLaunch` instead of the per-kernel dispatch sequence (including both cuFFT execs). Captured after two eligible iterations; invalidated on multigrid stage transitions and restarts. No effect without `VMECPP_SYNC_ELIDE`. Replays bit-identically to plain elision; wall-neutral at the canonical shape because elided iterations already pipeline launches ahead of the GPU. Retained for dispatch-bound hosts and shapes. |
 | `VMECPP_FWD_GRAPH` | CUDA graph over the forward-FFT chain. Graph-mode cuFFT shows no improvement on current toolkits. |

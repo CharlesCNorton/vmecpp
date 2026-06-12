@@ -849,6 +849,18 @@ bool PtsXMatchesCuda(int ns_local, int mpol, int ntor);
 // the last boundary-synced values. Driven by VMECPP_SYNC_ELIDE=K
 // orchestration in Vmec::Evolve.
 void SetSyncElideIterCuda(int elide);
+// Reads the flag staged by SetSyncElideIterCuda: true on iterations
+// whose host syncs are elided, false on boundary iterations and when
+// elision is off. The free-boundary path consults it to skip the host
+// vacuum block on elided iterations.
+bool SyncElidedIterCuda();
+// Run-level counterpart, set once per run by Vmec::Evolve when the
+// VMECPP_SYNC_ELIDE value resolves: true when the run carries an active
+// elision window, independent of the current iteration. The
+// free-boundary vacuum block consults it to force full NESTOR updates
+// at the window boundaries. Reset by ResetCudaStateForNewVmecRun.
+void SetSyncElideRunCuda(int active);
+bool SyncElideRunActiveCuda();
 
 // Diagnostic probe that reports the maximum absolute difference between
 // configuration zero and configuration one of a device-resident buffer.

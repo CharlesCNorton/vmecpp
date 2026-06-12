@@ -1566,6 +1566,7 @@ absl::StatusOr<bool> Vmec::Evolve(VmecCheckpoint checkpoint,
     const char* e = std::getenv("VMECPP_SYNC_ELIDE");
     g_sync_elide_k = (e ? std::atoi(e) : 0);
     if (g_sync_elide_k < 0) g_sync_elide_k = 0;
+    vmecpp::SetSyncElideRunCuda(g_sync_elide_k > 0 ? 1 : 0);
     static int last_printed = 0;
     if (g_sync_elide_k > 0 && g_sync_elide_k != last_printed) {
       last_printed = g_sync_elide_k;
@@ -1577,13 +1578,26 @@ absl::StatusOr<bool> Vmec::Evolve(VmecCheckpoint checkpoint,
           g_sync_elide_k, g_sync_elide_k);
     }
   }
-  // Free-boundary iterations synchronize the stream for the host NESTOR
-  // call, so the elision window has nothing to elide there.
-  const int sync_elide_k = fc_.lfreeb ? 0 : g_sync_elide_k;
+  const int sync_elide_k = g_sync_elide_k;
   if (sync_elide_k > 0) {
-    const bool boundary = (iter2_ <= 2) || ((iter2_ - iter1_) <= 2) ||
-                          ((iter2_ % sync_elide_k) == 1) ||
-                          (fc_.restart_reason != RestartReason::NO_RESTART);
+    // Free-boundary runs elide only with the vacuum contribution fully
+    // active: every iteration up to the kActive transition runs live, so
+    // the activation check reads fresh residuals and fires on time (a
+    // boundary moving without its vacuum constraint for a window of
+    // K - 1 iterations can leave the mgrid extent), and the soft-start
+    // restart replays the live sequence. Once active, the elision
+    // covers the scalar sync sites while the vacuum block keeps its
+    // per-iteration cadence: the NESTOR response must track the
+    // boundary every iteration, and a window-frozen edge force leaves
+    // the iteration orbiting its stale vacuum target instead of
+    // converging, with or without device-side geometry tracking of the
+    // staged edge pressure.
+    const bool boundary =
+        (iter2_ <= 2) || ((iter2_ - iter1_) <= 2) ||
+        ((iter2_ % sync_elide_k) == 1) ||
+        (fc_.restart_reason != RestartReason::NO_RESTART) ||
+        (fc_.lfreeb &&
+         vacuum_pressure_state_ != VacuumPressureState::kActive);
     g_sync_elided_iter = !boundary;
   } else {
     g_sync_elided_iter = false;
