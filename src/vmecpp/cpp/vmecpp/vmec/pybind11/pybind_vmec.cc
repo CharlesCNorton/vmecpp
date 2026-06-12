@@ -1407,25 +1407,20 @@ No-op on CPU-only builds.)pbdoc");
          const py::array_t<double, py::array::c_style | py::array::forcecast>
              &zmncs_batch,
          std::optional<int> max_threads, vmecpp::OutputMode verbose) {
-        // In-process batched per-cfg recompute. Each cfg's wout is
-        // reconstructed from its converged spectra (same math as the
-        // singular recompute_outputs_from_spectra) and fed through a
-        // single-stage vmecpp::run with HotRestartState. Between
-        // consecutive cfgs we call ResetCudaStateForNewVmecRun to clear
-        // the CUDA State singleton's persistent flags so the next
-        // vmecpp::run re-H2Ds its host decomposed_x and velocity vector
-        // into cfg 0's device slots from scratch.
+        // In-process batched per-configuration recompute. Each
+        // configuration's wout is reconstructed from its converged
+        // spectra (the same arithmetic as the singular
+        // recompute_outputs_from_spectra) and fed through a single-stage
+        // vmecpp::run with a HotRestartState. ResetCudaStateForNewVmecRun
+        // runs between consecutive configurations so each run re-stages
+        // its host decomposed position and velocity into the device
+        // slots from scratch.
         //
-        // This is the in-process counterpart to the operator's
-        // multiprocessing pool pattern. The pool spends 3-5 s per worker
-        // on Python + vmecpp imports plus the GPU is time-sliced across
-        // workers; the in-process loop shares one warm CUDA context and
-        // one warm Python interpreter, eliminating that overhead. The
-        // GPU still runs each cfg's hot-restart vmecpp::run sequentially
-        // (one CUDA context per process), but the per-call constant cost
-        // drops from ~5 s to whatever the recompute itself takes (~1 s
-        // with hot-restart converging in 1-3 iters from the supplied
-        // converged spectra).
+        // This is the in-process counterpart to a multiprocessing pool
+        // of single recomputes: the loop shares one warm CUDA context
+        // and one warm interpreter, so the several-second per-worker
+        // import and context cost disappears, and each hot restart
+        // converges in a few iterations from the supplied spectra.
 
         auto rmncc_info = rmncc_batch.request();
         auto rmnss_info = rmnss_batch.request();
@@ -1607,25 +1602,20 @@ No-op on CPU-only builds.)pbdoc");
       py::arg("zmnsc_batch"), py::arg("zmncs_batch"),
       py::arg("max_threads") = std::nullopt,
       py::arg("verbose") = vmecpp::OutputMode::kProgress,
-      R"pbdoc(In-process N-batched recompute_outputs_from_spectra.
+      R"pbdoc(In-process batched form of recompute_outputs_from_spectra.
 
-Runs N hot-restart vmecpp.run calls sequentially in the SAME Python
-process, sharing one warm CUDA context. Equivalent in result to N
-parallel multiprocessing-Pool subprocess calls to
-recompute_outputs_from_spectra, but trades the pool's process-spawn
-overhead (~3-5 s per worker on first call, ~1 s on warm pool) for the
-risk that the shared global CUDA State singleton retains state between
-calls. Between cfgs we call ResetCudaStateForNewVmecRun to clear the
-pts_x / pts_v initialized flags so each cfg's H2D from host
-decomposed_x runs from scratch.
+Runs N hot-restart vmecpp.run calls sequentially in one process,
+sharing a single warm CUDA context. The results match N subprocess
+calls to recompute_outputs_from_spectra without the per-subprocess
+interpreter and context startup cost. The persistent CUDA state resets
+between configurations, so each run stages its host state to the
+device from scratch.
 
 Spectra arrays have shape (N, ns, mpol*(ntor+1)) and are c-contiguous
-float64. indatas length must equal N. Each indata.mpol*(indata.ntor+1)
-must equal the column count.
-
-If the GPU State singleton lifecycle interaction breaks under load,
-the call falls back to a per-cfg vmecpp.run error and the caller can
-retry that cfg via the operator's multiprocessing-Pool path.
+float64. indatas length must equal N, and each indata's
+mpol*(ntor+1) must equal the column count. A configuration whose run
+fails raises; the subprocess path remains available for retrying
+individual configurations.
 )pbdoc");
 
   py::class_<makegrid::MakegridParameters>(m, "MakegridParameters")
@@ -1845,10 +1835,11 @@ retry that cfg via the operator's multiprocessing-Pool path.
             return false;
           }
 
-          // Deriver instance: setup-only run at the converged ns supplies
-          // the Sizes, FlowControl, basis tables, constants, profiles, and
-          // a HandoverStorage to patch per cfg. Its run resets the
-          // persistent CUDA state, which the flush above no longer needs.
+          // Deriver instance: a setup-only run at the converged ns
+          // supplies the Sizes, FlowControl, basis tables, constants,
+          // profiles, and a HandoverStorage to patch per configuration.
+          // Its run resets the persistent CUDA state; the flush above
+          // has already consumed it.
           vmecpp::VmecINDATA ind_drv = ind0;
           ind_drv.ns_array = Eigen::VectorXi::Constant(1, ns);
           const int last_ftol = static_cast<int>(ind0.ftol_array.size()) - 1;
@@ -2657,17 +2648,16 @@ retry that cfg via the operator's multiprocessing-Pool path.
                 vmecpp::HotRestartState hot_restart(std::move(wout_c),
                                                     ind_single);
 
-                // Clear the VMECPP_BATCH_* distinct-mode env vars before this
-                // per-cfg run so the new Vmec instance does not
-                // re-enter the distinct-mode pre-init path and the
-                // batched dec_x file load. The CUDA state's
-                // n_config_max is still cached from the batched run;
-                // we restrict the new Vmec to operate only on cfg 0
-                // by setting VMECPP_ACTIVE_PER_CFG_OVERRIDE_BITS so
-                // ResizeForBatch and ResetActivePerCfgForNextStage
-                // see a {1, 0, 0, ..., 0} mask and the kernels skip
-                // the stale cfgs 1..N-1 slots left over from the
-                // batched run.
+                // Clear the VMECPP_BATCH_* distinct-mode variables before
+                // this per-configuration run so the new Vmec instance
+                // does not re-enter the distinct-mode pre-initialization
+                // or the batched dec_x load. The CUDA state's
+                // n_config_max stays cached from the batched run, so
+                // VMECPP_ACTIVE_PER_CFG_OVERRIDE_BITS pins the new Vmec
+                // to configuration zero: ResizeForBatch and
+                // ResetActivePerCfgForNextStage see a {1, 0, ..., 0}
+                // mask and the kernels skip the stale slots left from
+                // the batched run.
                 unsetenv("VMECPP_BATCH_DISTINCT");
                 unsetenv("VMECPP_BATCH_INPUTS_FILE");
                 unsetenv("VMECPP_BATCH_OUTPUTS_FILE");
@@ -2677,15 +2667,14 @@ retry that cfg via the operator's multiprocessing-Pool path.
                 setenv("VMECPP_ACTIVE_PER_CFG_OVERRIDE_BITS",
                        active_mask.c_str(), 1);
 
-            // Reset the persistent CUDA state's pts_x / pts_v
-            // initialized flags before each per-cfg run so the
-            // next vmecpp::run re-H2Ds its host decomposed_x and
-            // velocity vector into cfg 0's device slots from
-            // scratch. Without this, the previous batched run's
-            // stale cfg 0 device buffers leak into the per-cfg
-            // hot-restart and CudaForward sees an iter-1
-            // geometry inconsistent with the hot-restart host
-            // state, leading to BAD_JACOBIAN.
+            // Reset the persistent CUDA state before each
+            // per-configuration run so the next vmecpp::run stages
+            // its host decomposed position and velocity into the
+            // configuration-zero device slots from scratch.
+            // Otherwise the batched run's stale device buffers leak
+            // into the hot restart and the first iteration's
+            // geometry contradicts the hot-restart host state,
+            // which forces BAD_JACOBIAN.
 #ifdef VMECPP_USE_CUDA
                 vmecpp::ResetCudaStateForNewVmecRun();
 #endif

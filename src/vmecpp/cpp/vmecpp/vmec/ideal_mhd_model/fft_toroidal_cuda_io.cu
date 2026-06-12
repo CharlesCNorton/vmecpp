@@ -272,9 +272,9 @@ void FlushForOutputQuantitiesCuda(
 // pipeline that delivers per-configuration throughput to the
 // Python batch driver.
 //
-// Caller responsibility: host buffers must be pre-sized to n_cfg × bytes
-// per the current Reshape. We do NOT validate sizes here (no API to ask
-// the host buffer how big it is); the caller knows n_cfg and the shape.
+// The caller pre-sizes every host buffer to n_cfg times the
+// per-configuration byte count of the current Reshape; raw pointers
+// carry no extent, so no size validation happens here.
 // ============================================================================
 void FlushAllConfigsForOutputCudaNs(
     int ns, const Sizes& s, int n_cfg,

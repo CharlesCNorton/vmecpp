@@ -11,8 +11,8 @@ namespace vmecpp {
 // small D2H + stream sync returns them.
 //
 // Honors the same jMaxRZ (with includeEdgeRZForces) and jMaxIncludeBoundary
-// range logic as the CPU loop. Stellarator-symmetric only (lasym=false), which
-// matches our mhd_stable workload.
+// range logic as the CPU loop. Stellarator-symmetric only (lasym = false),
+// matching the supported scope of the CUDA build.
 // ============================================================================
 void ResidualsCuda(const RadialPartitioning& r, const Sizes& s,
                     const FlowControl& fc, bool includeEdgeRZForces,
@@ -217,13 +217,13 @@ void ResidualsCuda(const RadialPartitioning& r, const Sizes& s,
     }
   }
   //
-  // Per-cfg cache: replace the 3-double D2H with a 3*n_cfg
-  // D2H into a static cache. Single-cfg behavior preserved (fResR_out =
-  // cache[0]); per-cfg cache is populated for free during the SAME sync
-  // (transfer cost delta ~100 ns at n_cfg=64; sync wait dominates). Per-cfg
-  // consumers in evalFResInvar/Precd read the cache via
-  // GetResidualsPerCfgCacheInvar() / GetResidualsPerCfgCachePrecd() WITHOUT
-  // issuing an extra D2H + sync.
+  // Per-cfg cache: the 3-double transfer widens to 3*n_cfg doubles into
+  // a static cache under the one synchronization this call already pays
+  // (the transfer delta is ~100 ns at n_cfg = 64; the sync wait
+  // dominates). Single-cfg behavior is preserved (fResR_out = cache[0]),
+  // and the per-cfg consumers in evalFResInvar/Precd read the cache via
+  // GetResidualsPerCfgCacheInvar / GetResidualsPerCfgCachePrecd with no
+  // additional transfer or sync.
   int n_cfg = S.n_config_max;
   std::vector<double>& cache = is_precd ? g_residuals_precd_cache
                                           : g_residuals_invar_cache;

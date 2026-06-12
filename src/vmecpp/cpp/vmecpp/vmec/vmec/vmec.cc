@@ -616,16 +616,14 @@ bool Vmec::InitializeRadial(
       old_r_.resize(num_threads_);
 
 #ifdef VMECPP_USE_CUDA
-      // Flush device-resident d_pts_x → host m_decomposed_x BEFORE the
-      // host derives old_xc_scaled_ from decomposed_x. Under the per-iter
-      // sync deferral the host m_decomposed_x can lag the device
-      // by up to K iters; the host upscale (downstream of old_xc_scaled_)
-      // operating on stale host data would diverge from the device's own
-      // multigrid upscale (per-cfg radial interp from
-      // d_pts_x_prev). Flushing here ensures the two upscales operate on
-      // bit-identical cfg-0 state, eliminating the 0.1pct L2 gap that
-      // pushes distinct-mode runs into BAD_JACOBIAN at iter 2 of the
-      // new stage.
+      // Flush the device-resident d_pts_x to the host m_decomposed_x
+      // before old_xc_scaled_ derives from it. Under the per-iteration
+      // sync deferral the host copy can lag the device by up to K
+      // iterations; the host upscale and the device's own per-cfg
+      // multigrid upscale must operate on bit-identical
+      // configuration-zero state, or the divergence between them forces
+      // distinct-mode runs into BAD_JACOBIAN at iteration 2 of the new
+      // stage.
       for (int thread_id = 0; thread_id < num_threads_; ++thread_id) {
         const int ns_old_local =
             r_[thread_id]->nsMaxF1 - r_[thread_id]->nsMinF1;
@@ -2176,8 +2174,9 @@ void Vmec::performTimeStep(const Sizes& s, const FlowControl& fc,
       m_decomposed_x.rmnss.data(), m_decomposed_x.zmnsc.data(),
       m_decomposed_x.zmncs.data(), m_decomposed_x.lmnsc.data(),
       m_decomposed_x.lmncs.data());
-  // Multi-rank handover (m_h_.rmncc_o/etc.) only fires for nsMinF1 > 0 or
-  // nsMaxF1 < fc.ns; dead under single-rank (our workload). Skip.
+  // The multi-rank handover through m_h_ applies only when nsMinF1 > 0
+  // or nsMaxF1 < fc.ns; single-rank execution, the only mode under the
+  // CUDA build, satisfies neither.
   (void)m_h_;
   return;
 #endif  // VMECPP_USE_CUDA

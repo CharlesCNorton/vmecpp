@@ -626,14 +626,13 @@ absl::StatusOr<bool> IdealMhdModel::update(
   }
   if (!host_triplet_dead) {
 #ifdef VMECPP_USE_CUDA
-    // Sync-deferral: at iter2<2 the host triplet below reads m_decomposed_x.
-    // The per-iter D2H is elided so we flush here. PtsXInitializedCuda is
-    // false in the very first iter (PerformTimeStepCuda hasn't run yet) and
-    // FlushDecomposedXToHostCuda has its own size-mismatch guard for the
-    // stage-transition window. Cheap: only iter2<2 per multigrid stage.
-    // Free-boundary runs flush every iteration: the host triplet stays
-    // alive there so HandOverBoundaryGeometry reads a current
-    // m_physical_x.
+    // The host triplet below reads m_decomposed_x, whose per-iteration
+    // device-to-host refresh is elided, so the flush runs here: at
+    // iter2 < 2 of each multigrid stage, and on every free-boundary
+    // iteration so HandOverBoundaryGeometry reads a current
+    // m_physical_x. PtsXInitializedCuda is false before the first
+    // PerformTimeStepCuda call, and FlushDecomposedXToHostCuda guards
+    // the stage-transition size mismatch itself.
     if ((iter2 < 2 || m_fc_.lfreeb) && PtsXInitializedCuda()) {
       FlushDecomposedXToHostCuda(
           0, r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
@@ -686,17 +685,12 @@ absl::StatusOr<bool> IdealMhdModel::update(
   }
 
 #ifdef VMECPP_USE_CUDA
-  // The synchronization performed by computeJacobian (the device-to-host
-  // transfer of the tau extrema, which gates the bad-Jacobian decision)
-  // also drains the asynchronous host geometry-scalar transfer queued by
-  // FourierToReal3DSymmFastPoloidalCuda. With that synchronization
-  // complete, the host-side r1_e, r1_o, and z1_e buffers contain valid
-  // values and the deferred host writes for SetRadialExtent and
-  // SetGeometricOffset can be committed safely. These updates were
-  // previously performed inside geometryFromFourier before the host
-  // synchronization was eliminated; the present arrangement coalesces
-  // them with the existing tau-extrema synchronization to avoid an
-  // additional per-iteration stream synchronization.
+  // computeJacobian's tau-extrema synchronization also drains the
+  // asynchronous geometry-scalar transfer queued by
+  // FourierToReal3DSymmFastPoloidalCuda, so r1_e, r1_o, and z1_e are
+  // valid here and the deferred SetRadialExtent and SetGeometricOffset
+  // writes commit without a second per-iteration stream
+  // synchronization.
   FlushFwdGeomScalarsToHost(r1_e.data(), r1_o.data(), z1_e.data());
   if (r_.nsMaxF1 == m_fc_.ns) {
     const int outer_index = (m_fc_.ns - 1 - r_.nsMinF1) * s_.nZnT + 0;
@@ -780,12 +774,10 @@ absl::StatusOr<bool> IdealMhdModel::update(
     }
 
 #ifdef VMECPP_USE_CUDA
-    // Fold hybridLambdaForce into seg-2 graph as well. It's the only per-iter
-    // wrapper between radialForceBalance and the (every-25-iters)
-    // preconditioner block; capturing it amortizes one more kernel-launch
-    // overhead per iter. Moved INSIDE the seg2_replayed gate;
-    // hybridLambdaForce_check skipped on replay because its CUDA path is purely
-    // device-side.
+    // hybridLambdaForce is captured inside the segment-2 graph: it is the
+    // only per-iteration wrapper between radialForceBalance and the
+    // preconditioner block, and its CUDA path is purely device-side, so
+    // the replay covers it and its checkpoint.
     hybridLambdaForce();
     if (checkpoint == VmecCheckpoint::HYBRID_LAMBDA_FORCE &&
         iter2 >= iterations_before_checkpointing) {
@@ -1314,10 +1306,11 @@ absl::StatusOr<bool> IdealMhdModel::update(
     }
 
 #ifdef VMECPP_USE_CUDA
-    // Device-side decompose + m1Constraint + zeroZForceForM1 in one wrapper.
-    // The CUDA wrapper unconditionally runs zeroZForceForM1 when lthreed; CPU
-    // only runs it when fsqz < 1e-6 || iter2 < 2. The stricter rule shouldn't
-    // change convergence direction; revisit if drift increases.
+    // Device-side composition of decomposeInto, m1Constraint, and
+    // zeroZForceForM1. The wrapper applies zeroZForceForM1 on every
+    // lthreed iteration, where the CPU path gates it on fsqz < 1e-6 or
+    // iter2 < 2; the unconditional form holds the m = 1 constraint
+    // exactly throughout and leaves the convergence direction unchanged.
     DecomposeAndConstrainCuda(
         r_, s_, m_fc_, 1.0 / std::numbers::sqrt2, m_p_.scalxc,
         m_decomposed_f.frcc.data(), m_decomposed_f.frss.data(),
@@ -1470,11 +1463,12 @@ absl::StatusOr<bool> IdealMhdModel::update(
 
   Eigen::VectorXd localFResPrecd = Eigen::VectorXd::Zero(3);
 #ifdef VMECPP_USE_CUDA
-  // is_precd=true → ResidualsCuda uses deferred-sync (1-iter-stale read).
-  // Result feeds tau / timestep evolution (fsq1 = fsqr1 + fsqz1 + fsql1);
-  // not the per-iter convergence gate in SolveEquilibriumLoop (that gate
-  // consumes the invariant residuals call above). bad_jacobian is still caught
-  // immediately at the next iter's ComputeJacobianCuda sync.
+  // The preconditioned residual call defers its synchronization and
+  // returns the prior iteration's value. The result feeds only the tau
+  // and time-step evolution; the convergence gate in
+  // SolveEquilibriumLoop consumes the invariant residual call above,
+  // and a bad Jacobian is caught at the next ComputeJacobianCuda
+  // synchronization.
   ResidualsCuda(r_, s_, m_fc_, /*includeEdgeRZForces=*/true, localFResPrecd[0],
                 localFResPrecd[1], localFResPrecd[2],
                 /*is_precd=*/true);
@@ -1489,16 +1483,9 @@ absl::StatusOr<bool> IdealMhdModel::update(
     return true;
   }
 
-  // The per-iteration FlushDecomposedToHostCuda call previously
-  // dispatched at this point has been removed. The time-step update is
-  // now device-resident via PerformTimeStepCuda, which reads the
-  // decomposed-force values directly from their device-resident shadow
-  // buffers; the host m_decomposed_f shadow therefore has no consumer
-  // within the iteration body and the synchronous device-to-host
-  // transfer that maintained it is unnecessary. The FlushDecomposedToHostCuda
-  // function itself is retained in fft_toroidal_cuda_io.cu for diagnostic
-  // use. FlushForOutputQuantitiesCuda remains hoisted to Vmec::run, where
-  // it performs the consolidated end-of-iteration flush.
+  // PerformTimeStepCuda consumes the decomposed forces from their device
+  // shadows, so the host m_decomposed_f arrays have no consumer inside
+  // the iteration body; they refresh at the end-of-run flush in Vmec::run.
 
   // --- end of residue()
 
@@ -3148,15 +3135,13 @@ void IdealMhdModel::computePreconditioningMatrix(
     Eigen::VectorXd& m_bxm, Eigen::VectorXd& m_bxd, Eigen::VectorXd& m_cxd) {
 #ifdef VMECPP_USE_CUDA
   {
-    // Identify whether this invocation is for the R or Z coordinate
-    // direction by comparing the address of the output buffer m_axm
-    // against the IdealMhdModel members arm and azm: updateRadialPreconditioner
-    // invokes this routine twice per preconditioner-update interval and
-    // passes the matching member array on each call. The CUDA wrapper
-    // consumes the resulting side index to direct its output snapshots
-    // into the appropriate set of persistent preconditioning-matrix
-    // buffers (d_pmat_arm and friends for side zero, d_pmat_azm and
-    // friends for side one).
+    // The coordinate direction follows from the output buffer address:
+    // updateRadialPreconditioner invokes this routine twice per
+    // preconditioner-update interval, passing arm for the R side and azm
+    // for the Z side. The side index routes the wrapper's output
+    // snapshots into the matching persistent preconditioning-matrix
+    // buffers (the d_pmat_arm set for side zero, the d_pmat_azm set for
+    // side one).
     const int side = (&m_axm == &this->arm) ? 0 : 1;
     ComputePreconditioningMatrixCuda(
         r_, s_, m_fc_, m_fc_.deltaS, kEvenParity, kOddParity, xs, xu12, xu_e,
