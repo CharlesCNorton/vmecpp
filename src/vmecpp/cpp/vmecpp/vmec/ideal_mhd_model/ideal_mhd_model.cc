@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstdio>
 #include <iostream>
 #include <numbers>
@@ -159,21 +160,19 @@ void vmecpp::deAliasConstraintForce(
     }  // m
   }
 
-  // VMECPP_DUMP_GCON=1: print a serial checksum of the dealiased gCon
+  // VMECPP_DUMP_GCON=1: print per-surface sums of the dealiased gCon
   // (diagnostic for CPU-vs-CUDA trajectory comparisons).
-  static int dump_gcon_env = -1;
-  if (dump_gcon_env < 0) {
+  static const int dump_gcon_env = [] {
     const char* e = std::getenv("VMECPP_DUMP_GCON");
-    dump_gcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
-  }
+    return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
+  }();
   if (dump_gcon_env) {
-    static int dumped = 0;
-    if (!dumped) {
-      dumped = 1;
+    static std::atomic<int> dumped{0};
+    if (dumped.exchange(1) == 0) {
       for (int j = 0; j < rp.nsMaxF - rp.nsMinF; ++j) {
         double rs = 0.0;
         for (int i = 0; i < s_.nZnT; ++i) {
-          rs += std::fabs(m_gCon[(size_t)j * s_.nZnT + i]);
+          rs += std::fabs(m_gCon[j * s_.nZnT + i]);
         }
         std::fprintf(stderr, "[GCONROW] j=%d %.17g\n", j, rs);
       }
@@ -3219,15 +3218,13 @@ absl::Status IdealMhdModel::constraintForceMultiplier() {
 
   // VMECPP_DUMP_TCON=1: print the first computed profile at full
   // precision (diagnostic for CPU-vs-CUDA trajectory comparisons).
-  static int dump_tcon_env = -1;
-  if (dump_tcon_env < 0) {
+  static const int dump_tcon_env = [] {
     const char* e = std::getenv("VMECPP_DUMP_TCON");
-    dump_tcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
-  }
+    return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
+  }();
   if (dump_tcon_env) {
-    static int dumped = 0;
-    if (!dumped) {
-      dumped = 1;
+    static std::atomic<int> dumped{0};
+    if (dumped.exchange(1) == 0) {
       for (int j = 1; j < std::min(9, r_.nsMaxF - r_.nsMinF); ++j) {
         std::fprintf(stderr, "[TCON] j=%d %.17g\n", j, tcon[j]);
       }
@@ -3263,15 +3260,13 @@ void IdealMhdModel::effectiveConstraintForce() {
 
   // VMECPP_DUMP_GCON=1: print a serial checksum of gConEff (diagnostic
   // for CPU-vs-CUDA trajectory comparisons).
-  static int dump_gcon_env = -1;
-  if (dump_gcon_env < 0) {
+  static const int dump_gcon_env = [] {
     const char* e = std::getenv("VMECPP_DUMP_GCON");
-    dump_gcon_env = (e && std::atoi(e) > 0) ? 1 : 0;
-  }
+    return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
+  }();
   if (dump_gcon_env) {
-    static int dumped = 0;
-    if (!dumped) {
-      dumped = 1;
+    static std::atomic<int> dumped{0};
+    if (dumped.exchange(1) == 0) {
       double sum = 0.0;
       const int total = (r_.nsMaxFIncludingLcfs - r_.nsMinF) * s_.nZnT;
       for (int i = 0; i < total; ++i) sum += std::fabs(gConEff[i]);
