@@ -303,8 +303,7 @@ def test_free_boundary_broadcast_matches_single():
     vi.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
     single = vmecpp.run(vi, max_threads=1, verbose=False)
     outs = _vmecpp.run_batched_gpu(
-        [vi._to_cpp_vmecindata()] * 2, max_threads=1,
-        verbose=_vmecpp.OutputMode.SILENT
+        [vi._to_cpp_vmecindata()] * 2, max_threads=1, verbose=_vmecpp.OutputMode.SILENT
     )
     assert len(outs) == 1
     assert outs[0].wout.volume == pytest.approx(single.wout.volume, rel=1e-10)
@@ -325,8 +324,9 @@ def test_free_boundary_distinct_two_boundaries():
         b.rbc = b.rbc * 1.005
         b.zbs = b.zbs * 1.005
         outs = _vmecpp.run_batched_gpu(
-            [a._to_cpp_vmecindata(), b._to_cpp_vmecindata()], max_threads=1,
-            verbose=_vmecpp.OutputMode.SILENT
+            [a._to_cpp_vmecindata(), b._to_cpp_vmecindata()],
+            max_threads=1,
+            verbose=_vmecpp.OutputMode.SILENT,
         )
     finally:
         os.environ.pop("VMECPP_BATCH_DISTINCT", None)

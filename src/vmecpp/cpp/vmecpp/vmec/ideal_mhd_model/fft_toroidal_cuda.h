@@ -275,12 +275,10 @@ void ScaleRZCon0Cuda(double factor);
 // synchronize. The host destinations are the single-configuration
 // arrays; the batched vacuum loop consumes one configuration at a time.
 void FlushVacuumHostDataCuda(int cfg, const RadialPartitioning& r,
-                             const Sizes& s,
-                             Eigen::VectorXd& m_r1_e, Eigen::VectorXd& m_r1_o,
-                             Eigen::VectorXd& m_z1_e,
+                             const Sizes& s, Eigen::VectorXd& m_r1_e,
+                             Eigen::VectorXd& m_r1_o, Eigen::VectorXd& m_z1_e,
                              Eigen::VectorXd& m_totalPressure,
-                             Eigen::VectorXd& m_presH,
-                             Eigen::VectorXd& m_bucoH,
+                             Eigen::VectorXd& m_presH, Eigen::VectorXd& m_bucoH,
                              Eigen::VectorXd& m_bvcoH);
 // H2D stage of one configuration's host-computed rBSq profile for the
 // edge application.
@@ -757,10 +755,10 @@ void InvalidatePtsXCuda();
 // single output equilibrium even when the batched execution mode has
 // solved multiple configurations in parallel.
 void FlushDecomposedXToHostCuda(int cfg, int ns_local, int mpol, int ntor,
-                                bool lthreed,
-                                double* m_dec_x_rcc, double* m_dec_x_rss,
-                                double* m_dec_x_zsc, double* m_dec_x_zcs,
-                                double* m_dec_x_lsc, double* m_dec_x_lcs);
+                                bool lthreed, double* m_dec_x_rcc,
+                                double* m_dec_x_rss, double* m_dec_x_zsc,
+                                double* m_dec_x_zcs, double* m_dec_x_lsc,
+                                double* m_dec_x_lcs);
 
 // Per-configuration variant of FlushForOutputQuantitiesCuda. Transfers
 // every metric-input array from device to host for all n_cfg

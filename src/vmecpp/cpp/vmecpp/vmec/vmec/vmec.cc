@@ -526,10 +526,10 @@ absl::StatusOr<bool> Vmec::run(const VmecCheckpoint& checkpoint,
   for (int t = 0; t < static_cast<int>(decomposed_x_.size()); ++t) {
     const int ns_local = r_[t]->nsMaxF1 - r_[t]->nsMinF1;
     vmecpp::FlushDecomposedXToHostCuda(
-        0, ns_local, s_.mpol, s_.ntor, s_.lthreed, decomposed_x_[t]->rmncc.data(),
-        decomposed_x_[t]->rmnss.data(), decomposed_x_[t]->zmnsc.data(),
-        decomposed_x_[t]->zmncs.data(), decomposed_x_[t]->lmnsc.data(),
-        decomposed_x_[t]->lmncs.data());
+        0, ns_local, s_.mpol, s_.ntor, s_.lthreed,
+        decomposed_x_[t]->rmncc.data(), decomposed_x_[t]->rmnss.data(),
+        decomposed_x_[t]->zmnsc.data(), decomposed_x_[t]->zmncs.data(),
+        decomposed_x_[t]->lmnsc.data(), decomposed_x_[t]->lmncs.data());
   }
 #endif
 
@@ -773,8 +773,7 @@ bool Vmec::InitializeRadial(
                                     h_.vacuum_magnetic_pressure.size()),
                   std::span<int>(fb_ipiv_per_cfg_[c].data(),
                                  fb_ipiv_per_cfg_[c].size()),
-                  std::span<double>(h_.vacuum_b_r.data(),
-                                    h_.vacuum_b_r.size()),
+                  std::span<double>(h_.vacuum_b_r.data(), h_.vacuum_b_r.size()),
                   std::span<double>(h_.vacuum_b_phi.data(),
                                     h_.vacuum_b_phi.size()),
                   std::span<double>(h_.vacuum_b_z.data(),
@@ -2021,7 +2020,8 @@ void Vmec::Printout(double delt0r, int thread_id, int iter2) {
   // execution; the contribution is registered directly.
   {
     const int ns_local = r_[thread_id]->nsMaxF1 - r_[thread_id]->nsMinF1;
-    vmecpp::FlushDecomposedXToHostCuda(0, ns_local, s_.mpol, s_.ntor, s_.lthreed,
+    vmecpp::FlushDecomposedXToHostCuda(0, ns_local, s_.mpol, s_.ntor,
+                                       s_.lthreed,
                                        decomposed_x_[thread_id]->rmncc.data(),
                                        decomposed_x_[thread_id]->rmnss.data(),
                                        decomposed_x_[thread_id]->zmnsc.data(),

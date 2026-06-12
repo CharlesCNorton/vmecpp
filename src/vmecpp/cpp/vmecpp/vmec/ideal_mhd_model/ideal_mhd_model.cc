@@ -968,8 +968,8 @@ absl::StatusOr<bool> IdealMhdModel::update(
         FreeBoundaryBase* fb_cfg =
             fb_per_cfg_.empty() ? m_fb_ : fb_per_cfg_[vac_cfg];
         vmecpp::FlushVacuumHostDataCuda(vac_cfg, r_, s_, r1_e, r1_o, z1_e,
-                                        totalPressure, m_p_.presH,
-                                        m_p_.bucoH, m_p_.bvcoH);
+                                        totalPressure, m_p_.presH, m_p_.bucoH,
+                                        m_p_.bvcoH);
         if (n_vac_cfg > 1) {
           // Refresh the host triplet from this configuration's device
           // state so HandOverBoundaryGeometry reads its LCFS spectrum.
@@ -1045,10 +1045,9 @@ absl::StatusOr<bool> IdealMhdModel::update(
           for (int kl = 0; kl < s_.nZnT; ++kl) {
             // extrapolate total pressure (from inside) to LCFS
             insideTotalPressure[kl] =
-                1.5 * totalPressure[(r_.nsMaxH - 1 - r_.nsMinH) * s_.nZnT +
-                                    kl] -
-                0.5 * totalPressure[(r_.nsMaxH - 2 - r_.nsMinH) * s_.nZnT +
-                                    kl];
+                1.5 *
+                    totalPressure[(r_.nsMaxH - 1 - r_.nsMinH) * s_.nZnT + kl] -
+                0.5 * totalPressure[(r_.nsMaxH - 2 - r_.nsMinH) * s_.nZnT + kl];
 
             // net pressure from outside on LCFS
             // NOTE: here is the interface between the fast-toroidal setup
