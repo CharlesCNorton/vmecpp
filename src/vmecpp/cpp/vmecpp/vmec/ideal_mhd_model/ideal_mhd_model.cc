@@ -162,11 +162,11 @@ void vmecpp::deAliasConstraintForce(
 
   // VMECPP_DUMP_GCON=1: print per-surface sums of the dealiased gCon
   // (diagnostic for CPU-vs-CUDA trajectory comparisons).
-  static const int dump_gcon_env = [] {
+  static const int kDumpGConEnv = [] {
     const char* e = std::getenv("VMECPP_DUMP_GCON");
     return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
   }();
-  if (dump_gcon_env) {
+  if (kDumpGConEnv) {
     static std::atomic<int> dumped{0};
     if (dumped.exchange(1) == 0) {
       for (int j = 0; j < rp.nsMaxF - rp.nsMinF; ++j) {
@@ -3218,11 +3218,11 @@ absl::Status IdealMhdModel::constraintForceMultiplier() {
 
   // VMECPP_DUMP_TCON=1: print the first computed profile at full
   // precision (diagnostic for CPU-vs-CUDA trajectory comparisons).
-  static const int dump_tcon_env = [] {
+  static const int kDumpTConEnv = [] {
     const char* e = std::getenv("VMECPP_DUMP_TCON");
     return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
   }();
-  if (dump_tcon_env) {
+  if (kDumpTConEnv) {
     static std::atomic<int> dumped{0};
     if (dumped.exchange(1) == 0) {
       for (int j = 1; j < std::min(9, r_.nsMaxF - r_.nsMinF); ++j) {
@@ -3260,11 +3260,11 @@ void IdealMhdModel::effectiveConstraintForce() {
 
   // VMECPP_DUMP_GCON=1: print a serial checksum of gConEff (diagnostic
   // for CPU-vs-CUDA trajectory comparisons).
-  static const int dump_gcon_env = [] {
+  static const int kDumpGConEnv = [] {
     const char* e = std::getenv("VMECPP_DUMP_GCON");
     return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
   }();
-  if (dump_gcon_env) {
+  if (kDumpGConEnv) {
     static std::atomic<int> dumped{0};
     if (dumped.exchange(1) == 0) {
       double sum = 0.0;
