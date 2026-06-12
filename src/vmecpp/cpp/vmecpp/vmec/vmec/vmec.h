@@ -209,6 +209,19 @@ class Vmec {
   Eigen::VectorXi iPiv;
   Eigen::VectorXd bvecShare;
 
+#ifdef VMECPP_USE_CUDA
+  // Batched free-boundary: one vacuum solver per configuration beyond
+  // configuration zero (which uses fb_), each with its own persistent
+  // response matrix, right-hand side, and pivot workspace. The mgrid
+  // provider and the HandoverStorage output spans are shared; the
+  // vacuum loop consumes each configuration's outputs before the next
+  // solver call overwrites them.
+  std::vector<std::unique_ptr<FreeBoundaryBase>> fb_extra_cfg_;
+  std::vector<Eigen::VectorXd> fb_matrix_per_cfg_;
+  std::vector<Eigen::VectorXi> fb_ipiv_per_cfg_;
+  std::vector<Eigen::VectorXd> fb_bvec_per_cfg_;
+#endif
+
  private:
   enum class SolveEqLoopStatus : std::uint8_t {
     NORMAL_TERMINATION,

@@ -37,10 +37,19 @@ supported inputs.
 
 The CUDA build supports fixed-boundary and free-boundary,
 stellarator-symmetric (`lasym = false`), three-dimensional (`ntor >= 1`)
-configurations, executed on a single radial rank. Free-boundary runs are
-single-configuration (`Vmec::run` rejects them when `VMECPP_N_CONFIG_MAX`
-exceeds 1). `lasym` and axisymmetric (`ntor = 0`) inputs are rejected
-with `absl::UnimplementedError`, and the radial domain is not partitioned
+configurations, executed on a single radial rank, in both the single and
+the batched execution modes. Batched free-boundary runs use the NESTOR
+vacuum solver, one instance per configuration slot sharing one loaded
+mgrid: every input in the batch must carry the same `mgrid_file` and
+`extcur` (the boundaries and plasma profiles may differ in distinct
+mode), and the vacuum activation iteration, the `nvacskip` cadence, and
+the soft-start restart are batch-wide decisions, so each configuration's
+trajectory sits in the drift family of its single run (a broadcast batch
+agrees with the single run to roughly 1e-13 relative). The per-iteration
+vacuum solves serialize on the host across the configurations, which
+bounds the batched free-boundary speedup well below the fixed-boundary
+one. `lasym` and axisymmetric (`ntor = 0`) inputs are rejected with
+`absl::UnimplementedError`, and the radial domain is not partitioned
 across OpenMP threads (`num_threads` is forced to 1 under the CUDA build;
 host threading offers no benefit when the iteration body runs on the
 device).

@@ -293,10 +293,11 @@ absl::StatusOr<bool> Vmec::run(const VmecCheckpoint& checkpoint,
   g_sync_elide_k = -2;
   g_per_cfg_niter_cap = -1;
   vmecpp::SetFreeBoundaryRunCuda(indata_.lfreeb ? 1 : 0);
-  if (indata_.lfreeb && vmecpp::GetNConfigMaxCuda() > 1) {
+  if (indata_.lfreeb && vmecpp::GetNConfigMaxCuda() > 1 &&
+      indata_.free_boundary_method != FreeBoundaryMethod::NESTOR) {
     return absl::UnimplementedError(
-        "free-boundary runs are single-configuration under the CUDA "
-        "build; unset VMECPP_N_CONFIG_MAX for free-boundary inputs");
+        "batched free-boundary runs support the NESTOR vacuum solver "
+        "only");
   }
   {
     const int ns_max = indata_.ns_array.maxCoeff();
@@ -525,7 +526,7 @@ absl::StatusOr<bool> Vmec::run(const VmecCheckpoint& checkpoint,
   for (int t = 0; t < static_cast<int>(decomposed_x_.size()); ++t) {
     const int ns_local = r_[t]->nsMaxF1 - r_[t]->nsMinF1;
     vmecpp::FlushDecomposedXToHostCuda(
-        ns_local, s_.mpol, s_.ntor, s_.lthreed, decomposed_x_[t]->rmncc.data(),
+        0, ns_local, s_.mpol, s_.ntor, s_.lthreed, decomposed_x_[t]->rmncc.data(),
         decomposed_x_[t]->rmnss.data(), decomposed_x_[t]->zmnsc.data(),
         decomposed_x_[t]->zmncs.data(), decomposed_x_[t]->lmnsc.data(),
         decomposed_x_[t]->lmncs.data());
@@ -630,7 +631,7 @@ bool Vmec::InitializeRadial(
             r_[thread_id]->nsMaxF1 - r_[thread_id]->nsMinF1;
         if (ns_old_local <= 0) continue;
         vmecpp::FlushDecomposedXToHostCuda(
-            ns_old_local, s_.mpol, s_.ntor, s_.lthreed,
+            0, ns_old_local, s_.mpol, s_.ntor, s_.lthreed,
             decomposed_x_[thread_id]->rmncc.data(),
             decomposed_x_[thread_id]->rmnss.data(),
             decomposed_x_[thread_id]->zmnsc.data(),
@@ -739,6 +740,48 @@ bool Vmec::InitializeRadial(
                                        ToString(indata_.free_boundary_method),
                                        "' not implemented yet");
           }  // indata_.free_boundary_method
+
+#ifdef VMECPP_USE_CUDA
+          // Batched free-boundary: one further NESTOR instance per
+          // configuration slot, each with its own persistent response
+          // matrix, right-hand side, and pivots. They share the mgrid
+          // provider and the HandoverStorage output spans; the vacuum
+          // loop in IdealMhdModel::update consumes each configuration's
+          // outputs before the next solver call overwrites them. Like
+          // fb_, the instances persist across multigrid stages.
+          const int n_cfg_fb = vmecpp::GetNConfigMaxCuda();
+          if (n_cfg_fb > 1 &&
+              indata_.free_boundary_method == FreeBoundaryMethod::NESTOR) {
+            const int nf = s_.ntor;
+            const int mf = s_.mpol + 1;
+            const int mnpd = (2 * nf + 1) * (mf + 1);
+            fb_matrix_per_cfg_.resize(n_cfg_fb - 1);
+            fb_ipiv_per_cfg_.resize(n_cfg_fb - 1);
+            fb_bvec_per_cfg_.resize(n_cfg_fb - 1);
+            fb_extra_cfg_.resize(n_cfg_fb - 1);
+            for (int c = 0; c + 1 < n_cfg_fb; ++c) {
+              fb_matrix_per_cfg_[c].setZero(mnpd * mnpd);
+              fb_ipiv_per_cfg_[c].setZero(mnpd);
+              fb_bvec_per_cfg_[c].setZero(mnpd);
+              fb_extra_cfg_[c] = std::make_unique<Nestor>(
+                  &s_, tp_[thread_id].get(), &mgrid_,
+                  std::span<double>(fb_matrix_per_cfg_[c].data(),
+                                    fb_matrix_per_cfg_[c].size()),
+                  std::span<double>(fb_bvec_per_cfg_[c].data(),
+                                    fb_bvec_per_cfg_[c].size()),
+                  std::span<double>(h_.vacuum_magnetic_pressure.data(),
+                                    h_.vacuum_magnetic_pressure.size()),
+                  std::span<int>(fb_ipiv_per_cfg_[c].data(),
+                                 fb_ipiv_per_cfg_[c].size()),
+                  std::span<double>(h_.vacuum_b_r.data(),
+                                    h_.vacuum_b_r.size()),
+                  std::span<double>(h_.vacuum_b_phi.data(),
+                                    h_.vacuum_b_phi.size()),
+                  std::span<double>(h_.vacuum_b_z.data(),
+                                    h_.vacuum_b_z.size()));
+            }
+          }
+#endif
         }  // !reuse_solver
       }  // lfreeb
 
@@ -748,6 +791,16 @@ bool Vmec::InitializeRadial(
           ls_[thread_id].get(), &h_, r_[thread_id].get(), fb_[thread_id].get(),
           kSignOfJacobian, indata_.nvacskip, &vacuum_pressure_state_);
       m_[thread_id]->setFromINDATA(indata_.ncurr, indata_.gamma, indata_.tcon0);
+#ifdef VMECPP_USE_CUDA
+      if (!fb_extra_cfg_.empty()) {
+        std::vector<FreeBoundaryBase*> fb_ptrs;
+        fb_ptrs.push_back(fb_[thread_id].get());
+        for (auto& fb : fb_extra_cfg_) {
+          fb_ptrs.push_back(fb.get());
+        }
+        m_[thread_id]->SetPerCfgFreeBoundary(std::move(fb_ptrs));
+      }
+#endif
     }  // thread_id
 
     if (checkpoint == VmecCheckpoint::SPECTRAL_CONSTRAINT &&
@@ -1377,14 +1430,24 @@ void Vmec::RestartIteration(double& m_delt0r, int thread_id) {
       if (n_cfg_cuda > 1 &&
           static_cast<int>(jac_cache.size()) == 2 * n_cfg_cuda) {
         std::vector<std::uint8_t> mask(n_cfg_cuda, 0);
+        bool any_bad = false;
         for (int c = 0; c < n_cfg_cuda; ++c) {
           double mn = jac_cache[2 * c + 0];
           double mx = jac_cache[2 * c + 1];
           double prod = mn * mx;
           bool bad = (prod < 0.0) || !std::isfinite(prod);
           mask[c] = bad ? 1 : 0;
+          any_bad = any_bad || bad;
         }
-        vmecpp::RestorePtsXFromBackupPerCfgCuda(mask);
+        if (any_bad) {
+          vmecpp::RestorePtsXFromBackupPerCfgCuda(mask);
+        } else {
+          // The restart fired without a per-configuration jacobian event
+          // (the free-boundary soft start forces BAD_JACOBIAN at vacuum
+          // activation): rewind every configuration, matching the
+          // single-configuration restore.
+          vmecpp::RestorePtsXFromBackupCuda();
+        }
       } else {
         vmecpp::RestorePtsXFromBackupCuda();
       }
@@ -1958,7 +2021,7 @@ void Vmec::Printout(double delt0r, int thread_id, int iter2) {
   // execution; the contribution is registered directly.
   {
     const int ns_local = r_[thread_id]->nsMaxF1 - r_[thread_id]->nsMinF1;
-    vmecpp::FlushDecomposedXToHostCuda(ns_local, s_.mpol, s_.ntor, s_.lthreed,
+    vmecpp::FlushDecomposedXToHostCuda(0, ns_local, s_.mpol, s_.ntor, s_.lthreed,
                                        decomposed_x_[thread_id]->rmncc.data(),
                                        decomposed_x_[thread_id]->rmnss.data(),
                                        decomposed_x_[thread_id]->zmnsc.data(),

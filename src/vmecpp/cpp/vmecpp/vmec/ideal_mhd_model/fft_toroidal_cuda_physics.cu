@@ -1594,81 +1594,113 @@ void ScaleRZCon0Cuda(double factor) {
   cuda_check(cudaGetLastError(), "k_scale_rzcon0 launch");
 }
 
-// One D2H flush per vacuum iteration: the axis row of r1_e/z1_e, the
-// LCFS row of r1_e/r1_o, the outermost two totalPressure rows, and the
-// presH profile (the edge-pressure extrapolation reads its outermost
-// entry on the host; without the flush that array is never written
-// under CUDA). The single synchronize also drains the bucoH/bvcoH
-// copies queued by radialForceBalance.
-void FlushVacuumHostDataCuda(const RadialPartitioning& r, const Sizes& s,
+// One D2H flush per vacuum iteration and configuration: the axis row of
+// r1_e/z1_e, the LCFS row of r1_e/r1_o, the outermost two totalPressure
+// rows, the presH profile (the edge-pressure extrapolation reads its
+// outermost entry on the host; without the flush that array is never
+// written under CUDA), and the bucoH/bvcoH profiles consumed by the
+// toroidal-current scalars. The host destinations are the
+// single-configuration arrays: the batched vacuum loop flushes, hands
+// over, and solves one configuration at a time. The single synchronize
+// drains every queued copy.
+void FlushVacuumHostDataCuda(int cfg, const RadialPartitioning& r,
+                             const Sizes& s,
                              Eigen::VectorXd& m_r1_e,
                              Eigen::VectorXd& m_r1_o,
                              Eigen::VectorXd& m_z1_e,
                              Eigen::VectorXd& m_totalPressure,
-                             Eigen::VectorXd& m_presH) {
+                             Eigen::VectorXd& m_presH,
+                             Eigen::VectorXd& m_bucoH,
+                             Eigen::VectorXd& m_bvcoH) {
   auto& S = State();
   if (!S.stream || !S.d_r1_e) return;
   std::lock_guard<std::mutex> lk(S.mu);
   const int nZnT = s.nZnT;
   const int ns_local = r.nsMaxF1 - r.nsMinF1;
+  const int ns_h = r.nsMaxH - r.nsMinH;
   const size_t row_bytes = sizeof(double) * (size_t)nZnT;
+  const size_t cfg_full = (size_t)cfg * (size_t)ns_local * (size_t)nZnT;
+  const size_t cfg_half = (size_t)cfg * (size_t)ns_h * (size_t)nZnT;
+  const size_t cfg_prof = (size_t)cfg * (size_t)ns_h;
   if (r.nsMinF1 == 0) {
-    cuda_check(cudaMemcpyAsync(m_r1_e.data(), S.d_r1_e, row_bytes,
+    cuda_check(cudaMemcpyAsync(m_r1_e.data(), S.d_r1_e + cfg_full, row_bytes,
                                cudaMemcpyDeviceToHost, S.stream),
                "d2h r1_e axis row");
-    cuda_check(cudaMemcpyAsync(m_z1_e.data(), S.d_z1_e, row_bytes,
+    cuda_check(cudaMemcpyAsync(m_z1_e.data(), S.d_z1_e + cfg_full, row_bytes,
                                cudaMemcpyDeviceToHost, S.stream),
                "d2h z1_e axis row");
   }
   const size_t lcfs_off = (size_t)(ns_local - 1) * (size_t)nZnT;
-  cuda_check(cudaMemcpyAsync(m_r1_e.data() + lcfs_off, S.d_r1_e + lcfs_off,
+  cuda_check(cudaMemcpyAsync(m_r1_e.data() + lcfs_off,
+                             S.d_r1_e + cfg_full + lcfs_off,
                              row_bytes, cudaMemcpyDeviceToHost, S.stream),
              "d2h r1_e lcfs row");
-  cuda_check(cudaMemcpyAsync(m_r1_o.data() + lcfs_off, S.d_r1_o + lcfs_off,
+  cuda_check(cudaMemcpyAsync(m_r1_o.data() + lcfs_off,
+                             S.d_r1_o + cfg_full + lcfs_off,
                              row_bytes, cudaMemcpyDeviceToHost, S.stream),
              "d2h r1_o lcfs row");
-  const int ns_h = r.nsMaxH - r.nsMinH;
   if (S.d_totalPressure && ns_h >= 2) {
     const size_t off = (size_t)(ns_h - 2) * (size_t)nZnT;
     cuda_check(cudaMemcpyAsync(m_totalPressure.data() + off,
-                               S.d_totalPressure + off,
+                               S.d_totalPressure + cfg_half + off,
                                sizeof(double) * 2 * (size_t)nZnT,
                                cudaMemcpyDeviceToHost, S.stream),
                "d2h totalPressure edge rows");
   }
   if (S.d_presH && ns_h > 0 && m_presH.size() >= ns_h) {
-    cuda_check(cudaMemcpyAsync(m_presH.data(), S.d_presH,
+    cuda_check(cudaMemcpyAsync(m_presH.data(), S.d_presH + cfg_prof,
                                sizeof(double) * (size_t)ns_h,
                                cudaMemcpyDeviceToHost, S.stream),
                "d2h presH");
   }
+  if (S.d_bucoH && ns_h > 0 && m_bucoH.size() >= ns_h) {
+    cuda_check(cudaMemcpyAsync(m_bucoH.data(), S.d_bucoH + cfg_prof,
+                               sizeof(double) * (size_t)ns_h,
+                               cudaMemcpyDeviceToHost, S.stream),
+               "d2h bucoH");
+  }
+  if (S.d_bvcoH && ns_h > 0 && m_bvcoH.size() >= ns_h) {
+    cuda_check(cudaMemcpyAsync(m_bvcoH.data(), S.d_bvcoH + cfg_prof,
+                               sizeof(double) * (size_t)ns_h,
+                               cudaMemcpyDeviceToHost, S.stream),
+               "d2h bvcoH");
+  }
   cuda_check(cudaStreamSynchronize(S.stream), "vacuum host-data sync");
 }
 
-// H2D stage of the host-computed rBSq profile; AssembleTotalForcesCuda
-// applies it to the LCFS force row while it is staged.
-void StageRbsqCuda(const Eigen::VectorXd& rBSq) {
+// H2D stage of the host-computed rBSq profile for one configuration;
+// AssembleTotalForcesCuda applies it to each configuration's LCFS force
+// row while it is staged. The buffer carries one nZnT profile per
+// configuration slot.
+void StageRbsqCuda(int cfg, const Eigen::VectorXd& rBSq) {
   auto& S = State();
   if (!S.stream) return;
   std::lock_guard<std::mutex> lk(S.mu);
-  const size_t bytes = sizeof(double) * (size_t)rBSq.size();
-  if (S.d_rbsq && S.rbsq_size != (int)rBSq.size()) {
+  const int per_cfg = (int)rBSq.size();
+  const size_t bytes_all =
+      sizeof(double) * (size_t)S.n_config_max * (size_t)per_cfg;
+  if (S.d_rbsq && S.rbsq_size != per_cfg) {
     cudaFree(S.d_rbsq);
     S.d_rbsq = nullptr;
   }
   if (!S.d_rbsq) {
-    cuda_check(cudaMalloc(&S.d_rbsq, bytes), "alloc d_rbsq");
-    S.rbsq_size = (int)rBSq.size();
+    cuda_check(cudaMalloc(&S.d_rbsq, bytes_all), "alloc d_rbsq");
+    S.rbsq_size = per_cfg;
   }
-  cuda_check(cudaMemcpyAsync(S.d_rbsq, rBSq.data(), bytes,
+  cuda_check(cudaMemcpyAsync(S.d_rbsq + (size_t)cfg * per_cfg, rBSq.data(),
+                             sizeof(double) * (size_t)per_cfg,
                              cudaMemcpyHostToDevice, S.stream),
              "h2d rbsq");
   S.rbsq_staged = true;
 }
 
-// Applies the vacuum edge pressure to the LCFS force row:
+// Applies the vacuum edge pressure to each configuration's LCFS force
+// row:
 //   armn_{e,o} += zuFull * rBSq,  azmn_{e,o} -= ruFull * rBSq.
-__global__ void k_apply_rbsq_edge(int nZnT, int row_off,
+// Batched execution: configuration axis on blockIdx.y; rbsq carries one
+// nZnT profile per configuration.
+__global__ void k_apply_rbsq_edge(int n_config, int nZnT, int row_off,
+                                  int con_stride, int force_stride,
                                   const double* __restrict__ rbsq,
                                   const double* __restrict__ ruFull,
                                   const double* __restrict__ zuFull,
@@ -1676,15 +1708,21 @@ __global__ void k_apply_rbsq_edge(int nZnT, int row_off,
                                   double* __restrict__ armn_o,
                                   double* __restrict__ azmn_e,
                                   double* __restrict__ azmn_o) {
+  int config = blockIdx.y;
+  if (config >= n_config) return;
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= nZnT) return;
-  const int idx = row_off + i;
-  const double ar = zuFull[idx] * rbsq[i];
-  const double az = ruFull[idx] * rbsq[i];
-  armn_e[idx] += ar;
-  armn_o[idx] += ar;
-  azmn_e[idx] -= az;
-  azmn_o[idx] -= az;
+  const size_t idx_con =
+      (size_t)config * (size_t)con_stride + (size_t)(row_off + i);
+  const size_t idx_force =
+      (size_t)config * (size_t)force_stride + (size_t)(row_off + i);
+  const double bsq = rbsq[(size_t)config * (size_t)nZnT + (size_t)i];
+  const double ar = zuFull[idx_con] * bsq;
+  const double az = ruFull[idx_con] * bsq;
+  armn_e[idx_force] += ar;
+  armn_o[idx_force] += ar;
+  azmn_e[idx_force] -= az;
+  azmn_o[idx_force] -= az;
 }
 
 // ============================================================================
@@ -1725,8 +1763,11 @@ void AssembleTotalForcesCuda(
   if (vacuum_edge && S.d_rbsq && S.rbsq_staged) {
     const int ETPB = 128;
     const int edge_row_off = (ns_force_local - 1) * nZnT;
-    k_apply_rbsq_edge<<<(nZnT + ETPB - 1) / ETPB, ETPB, 0, S.stream>>>(
-        nZnT, edge_row_off, S.d_rbsq, S.d_ruFull, S.d_zuFull,
+    dim3 eb((nZnT + ETPB - 1) / ETPB, S.n_config_max, 1);
+    k_apply_rbsq_edge<<<eb, ETPB, 0, S.stream>>>(
+        S.n_config_max, nZnT, edge_row_off,
+        ns_con_local * nZnT, ns_force_local * nZnT,
+        S.d_rbsq, S.d_ruFull, S.d_zuFull,
         S.d_armn_e, S.d_armn_o, S.d_azmn_e, S.d_azmn_o);
     cuda_check(cudaGetLastError(), "k_apply_rbsq_edge launch");
   }

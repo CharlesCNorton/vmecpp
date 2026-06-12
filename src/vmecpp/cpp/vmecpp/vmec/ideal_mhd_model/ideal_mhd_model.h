@@ -54,6 +54,16 @@ class IdealMhdModel {
 
   void setFromINDATA(int ncurr, double adiabaticIndex, double tCon0);
 
+#ifdef VMECPP_USE_CUDA
+  // Batched free-boundary: one vacuum solver per configuration slot
+  // (entry 0 is the solver also held by m_fb_). The vacuum block in
+  // update() loops the geometry handover, vacuum solve, and edge
+  // pressure over the configurations when this is populated.
+  void SetPerCfgFreeBoundary(std::vector<FreeBoundaryBase*> fbs) {
+    fb_per_cfg_ = std::move(fbs);
+  }
+#endif
+
   // Compute the invariant (i.e., not preconditioned yet) force residuals.
   // Will put them into the provided array as { fsqr, fsqz, fsql }.
   void evalFResInvar(const Eigen::VectorXd& localFResInvar);
@@ -417,6 +427,9 @@ class IdealMhdModel {
   const RadialPartitioning& r_;
   FreeBoundaryBase* m_fb_;
   VacuumPressureState& m_vacuum_pressure_state_;
+#ifdef VMECPP_USE_CUDA
+  std::vector<FreeBoundaryBase*> fb_per_cfg_;
+#endif
 
 #ifdef VMECPP_USE_FFTX
   // Pre-computed FFTX kernels for the toroidal (zeta) Fourier transforms.

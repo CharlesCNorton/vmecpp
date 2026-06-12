@@ -2061,6 +2061,25 @@ retry that cfg via the operator's multiprocessing-Pool path.
                 "lasym, and ns_array[0]");
           }
         }
+        // Free-boundary batches share one coil field: a single mgrid is
+        // loaded for the run, so every input must carry the same mgrid
+        // file and external currents. The boundaries (and the plasma
+        // profiles) may differ per configuration in distinct mode.
+        if (seed.lfreeb) {
+          for (int c = 1; c < n_cfg; ++c) {
+            const VmecINDATA &v = indata_list[c];
+            const bool extcur_matches =
+                v.extcur.size() == seed.extcur.size() &&
+                (v.extcur.size() == 0 ||
+                 (v.extcur.array() == seed.extcur.array()).all());
+            if (!v.lfreeb || v.mgrid_file != seed.mgrid_file ||
+                !extcur_matches) {
+              throw std::runtime_error(
+                  "run_batched_gpu: free-boundary batches must share "
+                  "lfreeb, mgrid_file, and extcur across all inputs");
+            }
+          }
+        }
         // Distinct-boundary path. Selected by setting the environment
         // variable VMECPP_BATCH_DISTINCT to a positive value. When
         // active, the per-configuration block below executes a

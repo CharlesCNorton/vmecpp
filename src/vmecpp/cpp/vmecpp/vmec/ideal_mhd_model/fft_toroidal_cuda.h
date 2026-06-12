@@ -268,18 +268,23 @@ void SetVacuumEdgeCuda(int active);
 void SetFreeBoundaryRunCuda(int enabled);
 // Scales the device rCon0/zCon0 volume profiles in place.
 void ScaleRZCon0Cuda(double factor);
-// One consolidated D2H flush per vacuum iteration: the axis and LCFS
-// geometry rows, the outermost totalPressure rows, and the presH
-// profile consumed by the edge-pressure extrapolation, with a single
-// synchronize that also drains the bucoH/bvcoH copies queued by
-// radialForceBalance.
-void FlushVacuumHostDataCuda(const RadialPartitioning& r, const Sizes& s,
+// One consolidated D2H flush per vacuum iteration and configuration:
+// the axis and LCFS geometry rows, the outermost totalPressure rows,
+// and the presH/bucoH/bvcoH profiles consumed by the edge-pressure
+// extrapolation and the toroidal-current scalars, with a single
+// synchronize. The host destinations are the single-configuration
+// arrays; the batched vacuum loop consumes one configuration at a time.
+void FlushVacuumHostDataCuda(int cfg, const RadialPartitioning& r,
+                             const Sizes& s,
                              Eigen::VectorXd& m_r1_e, Eigen::VectorXd& m_r1_o,
                              Eigen::VectorXd& m_z1_e,
                              Eigen::VectorXd& m_totalPressure,
-                             Eigen::VectorXd& m_presH);
-// H2D stage of the host-computed rBSq profile for the edge application.
-void StageRbsqCuda(const Eigen::VectorXd& rBSq);
+                             Eigen::VectorXd& m_presH,
+                             Eigen::VectorXd& m_bucoH,
+                             Eigen::VectorXd& m_bvcoH);
+// H2D stage of one configuration's host-computed rBSq profile for the
+// edge application.
+void StageRbsqCuda(int cfg, const Eigen::VectorXd& rBSq);
 
 // Device-side composition of the three steps that bridge the physical
 // force representation produced by the inverse FFT
@@ -751,7 +756,8 @@ void InvalidatePtsXCuda();
 // remainder of the end-of-run output-derivation logic, which produces a
 // single output equilibrium even when the batched execution mode has
 // solved multiple configurations in parallel.
-void FlushDecomposedXToHostCuda(int ns_local, int mpol, int ntor, bool lthreed,
+void FlushDecomposedXToHostCuda(int cfg, int ns_local, int mpol, int ntor,
+                                bool lthreed,
                                 double* m_dec_x_rcc, double* m_dec_x_rss,
                                 double* m_dec_x_zsc, double* m_dec_x_zcs,
                                 double* m_dec_x_lsc, double* m_dec_x_lcs);

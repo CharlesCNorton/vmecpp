@@ -291,6 +291,50 @@ def test_free_boundary_wout_fields_match_reference():
     assert compared >= 8, f"only {compared} fields compared"
 
 
+def test_free_boundary_broadcast_matches_single():
+    # Free-boundary broadcast: per-configuration vacuum solves under a
+    # batch-wide activation gate and ivacskip cadence. Configuration
+    # zero's result agrees with the single run far inside the
+    # free-boundary drift family (the n > 1 residual and controller
+    # arithmetic differs from the single path at the ulp level and the
+    # free-boundary trajectory carries it).
+    _single_env()
+    vi = vmecpp.VmecInput.from_file(TEST_DATA_DIR / "cth_like_free_bdy.json")
+    vi.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
+    single = vmecpp.run(vi, max_threads=1, verbose=False)
+    outs = _vmecpp.run_batched_gpu(
+        [vi._to_cpp_vmecindata()] * 2, max_threads=1,
+        verbose=_vmecpp.OutputMode.SILENT
+    )
+    assert len(outs) == 1
+    assert outs[0].wout.volume == pytest.approx(single.wout.volume, rel=1e-10)
+    assert outs[0].wout.wb == pytest.approx(single.wout.wb, rel=1e-10)
+
+
+def test_free_boundary_distinct_two_boundaries():
+    # Distinct free-boundary batch: two boundaries against one coil set
+    # converge to their own equilibria in one batched run. The batch
+    # shares the vacuum activation iteration and the NESTOR cadence, so
+    # each configuration sits in the drift family of its single run.
+    _single_env()
+    os.environ["VMECPP_BATCH_DISTINCT"] = "1"
+    try:
+        a = vmecpp.VmecInput.from_file(TEST_DATA_DIR / "cth_like_free_bdy.json")
+        a.mgrid_file = str(TEST_DATA_DIR / "mgrid_cth_like.nc")
+        b = a.model_copy(deep=True)
+        b.rbc = b.rbc * 1.005
+        b.zbs = b.zbs * 1.005
+        outs = _vmecpp.run_batched_gpu(
+            [a._to_cpp_vmecindata(), b._to_cpp_vmecindata()], max_threads=1,
+            verbose=_vmecpp.OutputMode.SILENT
+        )
+    finally:
+        os.environ.pop("VMECPP_BATCH_DISTINCT", None)
+    assert len(outs) == 2
+    assert outs[0].wout.volume == pytest.approx(0.307272962641336, rel=5e-4)
+    assert outs[1].wout.volume > outs[0].wout.volume
+
+
 def test_fixed_then_free_boundary_one_process():
     # A fixed-boundary run followed by a free-boundary run in the same
     # process: the vacuum block's host-side consumers (the edge-pressure

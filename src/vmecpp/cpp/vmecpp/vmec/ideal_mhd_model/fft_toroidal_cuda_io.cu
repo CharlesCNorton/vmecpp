@@ -681,7 +681,7 @@ void InvalidatePtsXCuda() {
 }
 
 void FlushDecomposedXToHostCuda(
-    int ns_local, int mpol, int ntor, bool lthreed,
+    int cfg, int ns_local, int mpol, int ntor, bool lthreed,
     double* m_dec_x_rcc, double* m_dec_x_rss,
     double* m_dec_x_zsc, double* m_dec_x_zcs,
     double* m_dec_x_lsc, double* m_dec_x_lcs) {
@@ -699,23 +699,24 @@ void FlushDecomposedXToHostCuda(
       != (size_t)S.pts_x_size) {
     return;
   }
-  cuda_check(cudaMemcpyAsync(m_dec_x_rcc, S.d_pts_x_rcc, x_bytes_one,
+  const size_t off = (size_t)cfg * (size_t)S.pts_x_size;
+  cuda_check(cudaMemcpyAsync(m_dec_x_rcc, S.d_pts_x_rcc + off, x_bytes_one,
                               cudaMemcpyDeviceToHost, S.stream),
              "flush dec_x rcc");
-  cuda_check(cudaMemcpyAsync(m_dec_x_zsc, S.d_pts_x_zsc, x_bytes_one,
+  cuda_check(cudaMemcpyAsync(m_dec_x_zsc, S.d_pts_x_zsc + off, x_bytes_one,
                               cudaMemcpyDeviceToHost, S.stream),
              "flush dec_x zsc");
-  cuda_check(cudaMemcpyAsync(m_dec_x_lsc, S.d_pts_x_lsc, x_bytes_one,
+  cuda_check(cudaMemcpyAsync(m_dec_x_lsc, S.d_pts_x_lsc + off, x_bytes_one,
                               cudaMemcpyDeviceToHost, S.stream),
              "flush dec_x lsc");
   if (lthreed) {
-    cuda_check(cudaMemcpyAsync(m_dec_x_rss, S.d_pts_x_rss, x_bytes_one,
+    cuda_check(cudaMemcpyAsync(m_dec_x_rss, S.d_pts_x_rss + off, x_bytes_one,
                                 cudaMemcpyDeviceToHost, S.stream),
                "flush dec_x rss");
-    cuda_check(cudaMemcpyAsync(m_dec_x_zcs, S.d_pts_x_zcs, x_bytes_one,
+    cuda_check(cudaMemcpyAsync(m_dec_x_zcs, S.d_pts_x_zcs + off, x_bytes_one,
                                 cudaMemcpyDeviceToHost, S.stream),
                "flush dec_x zcs");
-    cuda_check(cudaMemcpyAsync(m_dec_x_lcs, S.d_pts_x_lcs, x_bytes_one,
+    cuda_check(cudaMemcpyAsync(m_dec_x_lcs, S.d_pts_x_lcs + off, x_bytes_one,
                                 cudaMemcpyDeviceToHost, S.stream),
                "flush dec_x lcs");
   }

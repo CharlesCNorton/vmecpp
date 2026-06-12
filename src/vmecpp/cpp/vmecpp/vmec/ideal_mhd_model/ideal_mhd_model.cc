@@ -636,7 +636,7 @@ absl::StatusOr<bool> IdealMhdModel::update(
     // m_physical_x.
     if ((iter2 < 2 || m_fc_.lfreeb) && PtsXInitializedCuda()) {
       FlushDecomposedXToHostCuda(
-          r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
+          0, r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
           m_decomposed_x.rmncc.data(), m_decomposed_x.rmnss.data(),
           m_decomposed_x.zmnsc.data(), m_decomposed_x.zmncs.data(),
           m_decomposed_x.lmnsc.data(), m_decomposed_x.lmncs.data());
@@ -871,7 +871,7 @@ absl::StatusOr<bool> IdealMhdModel::update(
     // cadence).
     if (vmecpp::PtsXInitializedCuda()) {
       vmecpp::FlushDecomposedXToHostCuda(
-          r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
+          0, r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
           m_decomposed_x.rmncc.data(), m_decomposed_x.rmnss.data(),
           m_decomposed_x.zmnsc.data(), m_decomposed_x.zmncs.data(),
           m_decomposed_x.lmnsc.data(), m_decomposed_x.lmncs.data());
@@ -954,25 +954,165 @@ absl::StatusOr<bool> IdealMhdModel::update(
       // IF INITIALLY ON, MUST TURN OFF rcon0, zcon0 SLOWLY
 #ifdef VMECPP_USE_CUDA
       // The constraint-origin profiles live on the device; decay them
-      // there. The axis and LCFS geometry rows flush here for
-      // HandOverMagneticAxis and the rBSq evaluation below; the host
-      // m_physical_x is already current because the host triplet stays
-      // alive on free-boundary runs.
+      // there. The per-configuration loop below flushes each
+      // configuration's axis and LCFS geometry rows, refreshes the host
+      // triplet for the geometry handover, runs that configuration's
+      // vacuum solve, and stages its edge-pressure profile. The vacuum
+      // pressure state, the ivacskip cadence, and the soft-start restart
+      // are batch-wide decisions, so a broadcast batch replays the
+      // single-configuration sequence per slot.
       vmecpp::ScaleRZCon0Cuda(0.9);
-      vmecpp::FlushVacuumHostDataCuda(r_, s_, r1_e, r1_o, z1_e, totalPressure,
-                                      m_p_.presH);
-      // The NESTOR call below consumes the toroidal-current scalars;
-      // their inputs arrived with the synchronized flush above.
-      if (r_.nsMinH == 0) {
-        m_h_.rBtor0 = 1.5 * m_p_.bvcoH[r_.nsMinH - r_.nsMinH] -
-                      0.5 * m_p_.bvcoH[r_.nsMinH + 1 - r_.nsMinH];
+      const int n_vac_cfg =
+          fb_per_cfg_.empty() ? 1 : static_cast<int>(fb_per_cfg_.size());
+      for (int vac_cfg = 0; vac_cfg < n_vac_cfg; ++vac_cfg) {
+        FreeBoundaryBase* fb_cfg =
+            fb_per_cfg_.empty() ? m_fb_ : fb_per_cfg_[vac_cfg];
+        vmecpp::FlushVacuumHostDataCuda(vac_cfg, r_, s_, r1_e, r1_o, z1_e,
+                                        totalPressure, m_p_.presH,
+                                        m_p_.bucoH, m_p_.bvcoH);
+        if (n_vac_cfg > 1) {
+          // Refresh the host triplet from this configuration's device
+          // state so HandOverBoundaryGeometry reads its LCFS spectrum.
+          vmecpp::FlushDecomposedXToHostCuda(
+              vac_cfg, r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
+              m_decomposed_x.rmncc.data(), m_decomposed_x.rmnss.data(),
+              m_decomposed_x.zmnsc.data(), m_decomposed_x.zmncs.data(),
+              m_decomposed_x.lmnsc.data(), m_decomposed_x.lmncs.data());
+          m_decomposed_x.decomposeInto(m_physical_x, m_p_.scalxc);
+          m_physical_x.m1Constraint(1.0);
+          m_physical_x.extrapolateTowardsAxis();
+        }
+        // The NESTOR call below consumes the toroidal-current scalars;
+        // their inputs arrived with the synchronized flush above.
+        if (r_.nsMinH == 0) {
+          m_h_.rBtor0 = 1.5 * m_p_.bvcoH[r_.nsMinH - r_.nsMinH] -
+                        0.5 * m_p_.bvcoH[r_.nsMinH + 1 - r_.nsMinH];
+        }
+        if (r_.nsMaxH == m_fc_.ns - 1) {
+          m_h_.rBtor = 1.5 * m_p_.bvcoH[r_.nsMaxH - 1 - r_.nsMinH] -
+                       0.5 * m_p_.bvcoH[r_.nsMaxH - 2 - r_.nsMinH];
+          m_h_.cTor = (1.5 * m_p_.bucoH[r_.nsMaxH - 1 - r_.nsMinH] -
+                       0.5 * m_p_.bucoH[r_.nsMaxH - 2 - r_.nsMinH]) *
+                      signOfJacobian * 2.0 * M_PI;
+        }
+
+        if (r_.nsMaxF1 == m_fc_.ns) {
+          // can only get this from thread that has the LCFS !!!
+          HandOverBoundaryGeometry(
+              m_h_, m_physical_x, s_,
+              /*offset=*/(r_.nsMaxF1 - 1 - r_.nsMinF1) * s_.mnsize);
+        }
+
+        if (r_.nsMinF == 0) {
+          // this thread has the magnetic axis
+          // Note: axis geometry is zero-th flux surface, l = 0, k fastest
+          // index
+          HandOverMagneticAxis(m_h_, r1_e, z1_e, s_);
+        }
+
+        const double netToroidalCurrent = m_h_.cTor / MU_0;
+        bool reached_checkpoint = fb_cfg->update(
+            m_h_.rCC_LCFS, m_h_.rSS_LCFS, m_h_.rSC_LCFS, m_h_.rCS_LCFS,
+            m_h_.zSC_LCFS, m_h_.zCS_LCFS, m_h_.zCC_LCFS, m_h_.zSS_LCFS,
+            signOfJacobian, m_h_.rAxis, m_h_.zAxis, &(m_h_.bSubUVac),
+            &(m_h_.bSubVVac), netToroidalCurrent, ivacskip, checkpoint,
+            iter2 >= iterations_before_checkpointing);
+        if (reached_checkpoint) {
+          return true;
+        }
+
+        if (m_h_.rBtor * m_h_.bSubVVac < 0.0) {
+          return absl::InternalError(
+              "IdealMHDModel::update: rbtor and bsubvvac must have the same "
+              "sign - maybe flip the sign of phiedge or the sign of the coil "
+              "currents");
+        } else if (fabs((m_h_.cTor - m_h_.bSubUVac) / m_h_.rBtor) > 0.01) {
+          return absl::InternalError(
+              "IdealMHDModel::update: VAC-VMEC I_TOR MISMATCH : BOUNDARY MAY "
+              "ENCLOSE EXT. COIL");
+        }
+
+        if (r_.nsMaxF1 == m_fc_.ns) {
+          // MUST NOT BREAK TRI-DIAGONAL RADIAL COUPLING: OFFENDS
+          // PRECONDITIONER!
+          double edgePressure =
+              m_p_.evalMassProfile((m_fc_.ns - 1.5) / (m_fc_.ns - 1.0));
+          if (edgePressure != 0.0) {
+            edgePressure = m_p_.evalMassProfile(1.0) / edgePressure *
+                           m_p_.presH[r_.nsMaxH - 1 - r_.nsMinH];
+          }
+
+          for (int kl = 0; kl < s_.nZnT; ++kl) {
+            // extrapolate total pressure (from inside) to LCFS
+            insideTotalPressure[kl] =
+                1.5 * totalPressure[(r_.nsMaxH - 1 - r_.nsMinH) * s_.nZnT +
+                                    kl] -
+                0.5 * totalPressure[(r_.nsMaxH - 2 - r_.nsMinH) * s_.nZnT +
+                                    kl];
+
+            // net pressure from outside on LCFS
+            // NOTE: here is the interface between the fast-toroidal setup
+            // in Nestor and fast-poloidal setup in VMEC
+            const int k = kl / s_.nThetaEff;
+            const int l = kl % s_.nThetaEff;
+            const int idx_lk = l * s_.nZeta + k;
+            double outsideEdgePressure =
+                m_h_.vacuum_magnetic_pressure[idx_lk] + edgePressure;
+
+            // term to enter MHD forces
+            int idx_kl = (r_.nsMaxF1 - 1 - r_.nsMinF1) * s_.nZnT + kl;
+            rBSq[kl] = outsideEdgePressure * (r1_e[idx_kl] + r1_o[idx_kl]) /
+                       m_fc_.deltaS;
+
+            // for printout: global mismatch between inside and outside
+            // pressure
+            delBSq[kl] = fabs(outsideEdgePressure - insideTotalPressure[kl]);
+          }
+          vmecpp::StageRbsqCuda(vac_cfg, rBSq);
+        }
+      }  // vac_cfg
+
+      if (n_vac_cfg > 1) {
+        // Restore configuration zero's host triplet for the downstream
+        // host consumers.
+        vmecpp::FlushDecomposedXToHostCuda(
+            0, r_.nsMaxF1 - r_.nsMinF1, s_.mpol, s_.ntor, s_.lthreed,
+            m_decomposed_x.rmncc.data(), m_decomposed_x.rmnss.data(),
+            m_decomposed_x.zmnsc.data(), m_decomposed_x.zmncs.data(),
+            m_decomposed_x.lmnsc.data(), m_decomposed_x.lmncs.data());
+        m_decomposed_x.decomposeInto(m_physical_x, m_p_.scalxc);
+        m_physical_x.m1Constraint(1.0);
+        m_physical_x.extrapolateTowardsAxis();
       }
-      if (r_.nsMaxH == m_fc_.ns - 1) {
-        m_h_.rBtor = 1.5 * m_p_.bvcoH[r_.nsMaxH - 1 - r_.nsMinH] -
-                     0.5 * m_p_.bvcoH[r_.nsMaxH - 2 - r_.nsMinH];
-        m_h_.cTor = (1.5 * m_p_.bucoH[r_.nsMaxH - 1 - r_.nsMinH] -
-                     0.5 * m_p_.bucoH[r_.nsMaxH - 2 - r_.nsMinH]) *
-                    signOfJacobian * 2.0 * M_PI;
+
+      {
+        // In educational_VMEC, this is part of Nestor.
+        if (m_vacuum_pressure_state_ == VacuumPressureState::kInitializing) {
+          m_vacuum_pressure_state_ = VacuumPressureState::kInitialized;
+
+          if (verbose) {
+            // bSubUVac and cTor contain 2*pi already; see Nestor.cc for
+            // bSubUVac and above for cTor
+            const double fac = 1.0e-6 / MU_0;  // in MA
+            std::cout << "\n";
+            std::cout << absl::StrFormat(
+                "2*pi * a * -BPOL(vac) = %10.2e MA       R * BTOR(vacuum) = "
+                "%10.2e\n",
+                m_h_.bSubUVac * fac, m_h_.bSubVVac);
+            std::cout << absl::StrFormat(
+                "     TOROIDAL CURRENT = %10.2e MA       R * BTOR(plasma) = "
+                "%10.2e\n",
+                m_h_.cTor * fac, m_h_.rBtor);
+          }
+        }  // fullUpdate printout
+      }
+
+      // RESET FIRST TIME FOR SOFT START
+      if (m_vacuum_pressure_state_ == VacuumPressureState::kInitialized) {
+        m_fc_.restart_reason = RestartReason::BAD_JACOBIAN;
+        m_need_restart = true;
+      } else {
+        m_need_restart = false;
       }
 #else
       for (int jF = r_.nsMinF; jF < r_.nsMaxF; ++jF) {
@@ -984,7 +1124,6 @@ absl::StatusOr<bool> IdealMhdModel::update(
           zCon0[idx_kl] *= 0.9;
         }  // kl
       }  // j
-#endif  // VMECPP_USE_CUDA
 
       if (r_.nsMaxF1 == m_fc_.ns) {
         // can only get this from thread that has the LCFS !!!
@@ -1097,9 +1236,6 @@ absl::StatusOr<bool> IdealMhdModel::update(
           // for printout: global mismatch between inside and outside pressure
           delBSq[kl] = fabs(outsideEdgePressure - insideTotalPressure[kl]);
         }
-#ifdef VMECPP_USE_CUDA
-        vmecpp::StageRbsqCuda(rBSq);
-#endif
 
         if (m_vacuum_pressure_state_ == VacuumPressureState::kInitialized) {
           // TODO(jons): implement this !!!
@@ -1111,6 +1247,7 @@ absl::StatusOr<bool> IdealMhdModel::update(
           // bsqsav(:nznt,2) = bsqvac(:nznt)
         }
       }
+#endif  // VMECPP_USE_CUDA
 
       if (checkpoint == VmecCheckpoint::RBSQ &&
           iter2 >= iterations_before_checkpointing) {
