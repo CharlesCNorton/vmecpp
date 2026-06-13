@@ -1596,8 +1596,7 @@ absl::StatusOr<bool> Vmec::Evolve(VmecCheckpoint checkpoint,
         (iter2_ <= 2) || ((iter2_ - iter1_) <= 2) ||
         ((iter2_ % sync_elide_k) == 1) ||
         (fc_.restart_reason != RestartReason::NO_RESTART) ||
-        (fc_.lfreeb &&
-         vacuum_pressure_state_ != VacuumPressureState::kActive);
+        (fc_.lfreeb && vacuum_pressure_state_ != VacuumPressureState::kActive);
     g_sync_elided_iter = !boundary;
   } else {
     g_sync_elided_iter = false;
