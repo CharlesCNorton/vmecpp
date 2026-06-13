@@ -11,6 +11,7 @@
 #include <limits>
 
 #include "absl/log/check.h"
+#include "vmecpp/common/util/os_compat.h"  // VMECPP_UNREACHABLE
 #ifdef _OPENMP
 #include <omp.h>
 #endif  // _OPENMP
@@ -34,7 +35,7 @@ RestartReason RestartReasonFromInt(int restart_reason) {
     case 4:
       return RestartReason::HUGE_INITIAL_FORCES;
     default:
-      __builtin_unreachable();
+      VMECPP_UNREACHABLE();
   }
 }
 

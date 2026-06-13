@@ -1,4 +1,5 @@
 #include "vmecpp/vmec/ideal_mhd_model/fft_toroidal_cuda_common.cuh"
+#include "vmecpp/common/util/os_compat.h"  // setenv on MSVC
 
 namespace vmecpp {
 // Definitions of the globals declared extern in the common header.

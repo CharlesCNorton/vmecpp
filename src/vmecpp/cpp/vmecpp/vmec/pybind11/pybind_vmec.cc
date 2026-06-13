@@ -8,12 +8,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>  // to wrap std::vector
 #include <pybind11/stl/filesystem.h>
-#include <unistd.h>  // getpid
 
 #include <Eigen/Dense>
 #include <array>
 #include <cstdio>   // FILE, fopen, fwrite, fread, fclose, remove
-#include <cstdlib>  // setenv, unsetenv
+#include <cstdlib>  // setenv, unsetenv, getenv
 #include <cstring>  // memcpy
 #include <filesystem>
 #include <optional>
@@ -26,6 +25,7 @@
 #include "vmecpp/common/magnetic_configuration_lib/magnetic_configuration_lib.h"
 #include "vmecpp/common/makegrid_lib/makegrid_lib.h"
 #include "vmecpp/common/sizes/sizes.h"
+#include "vmecpp/common/util/os_compat.h"  // setenv/unsetenv/getpid/OsTmpDir
 #include "vmecpp/common/util/util.h"
 #include "vmecpp/common/vmec_indata/vmec_indata.h"
 #include "vmecpp/vmec/output_quantities/output_quantities.h"
@@ -1022,7 +1022,7 @@ PYBIND11_MODULE(_vmecpp, m) {
             if (!s.ok()) {
               const std::string msg =
                   "There was an error saving OutputQuantities to file '" +
-                  std::string(path) + "':\n" + std::string(s.message());
+                  path.string() + "':\n" + std::string(s.message());
               throw std::runtime_error(msg);
             }
           },
@@ -1032,8 +1032,7 @@ PYBIND11_MODULE(_vmecpp, m) {
         if (!maybe_oq.ok()) {
           const std::string msg =
               "There was an error loading OutputQuantities from file '" +
-              std::string(path) + "':\n" +
-              std::string(maybe_oq.status().message());
+              path.string() + "':\n" + std::string(maybe_oq.status().message());
           throw std::runtime_error(msg);
         }
         return maybe_oq.value();
@@ -2306,7 +2305,8 @@ individual configurations.
           unsetenv("VMECPP_BATCH_INPUTS_FILE");
           unsetenv("VMECPP_BATCH_DEC_X_FILE");
           const std::string pid = std::to_string(getpid());
-          batch_out_path = "/tmp/vmecpp_batch_outputs_" + pid + ".bin";
+          batch_out_path =
+              vmecpp::OsTmpDir() + "vmecpp_batch_outputs_" + pid + ".bin";
           setenv("VMECPP_BATCH_OUTPUTS_FILE", batch_out_path.c_str(), 1);
         } else {
           // Broadcast branch. The batched kernel chain executes at full
@@ -2424,7 +2424,8 @@ individual configurations.
           std::string batch_out_path_eff = batch_out_path;
           if (batch_out_path_eff.empty()) {
             const std::string pid_s = std::to_string(getpid());
-            batch_out_path_eff = "/tmp/vmecpp_batch_outputs_" + pid_s + ".bin";
+            batch_out_path_eff =
+                vmecpp::OsTmpDir() + "vmecpp_batch_outputs_" + pid_s + ".bin";
           }
           // Read header and payload.
           FILE *f =  // NOLINT(cppcoreguidelines-owning-memory)

@@ -1145,7 +1145,8 @@ absl::Status vmecpp::WOutFileContents::LoadInto(WOutFileContents& m_obj,
 
 absl::Status vmecpp::OutputQuantities::Save(
     const std::filesystem::path& path) const {
-  H5::H5File file(path, H5F_ACC_TRUNC);
+  // path on Windows is wchar_t-based; the H5File ctor takes a narrow string.
+  H5::H5File file(path.string(), H5F_ACC_TRUNC);
 
   absl::Status status;
 
@@ -1249,7 +1250,7 @@ absl::Status vmecpp::OutputQuantities::Save(
 
 absl::StatusOr<vmecpp::OutputQuantities> vmecpp::OutputQuantities::Load(
     const std::filesystem::path& path) {
-  H5::H5File file(path, H5F_ACC_RDONLY);
+  H5::H5File file(path.string(), H5F_ACC_RDONLY);
 
   OutputQuantities oq;
   absl::Status status;

@@ -8,9 +8,23 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-set(CMAKE_CXX_FLAGS "-fPIC -Wall -Wextra")
-set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fno-math-errno")
+if(MSVC)
+  # cl.exe does not accept the GCC/Clang flags below. /bigobj is required:
+  # the CUDA translation units exceed the default object section limit.
+  # _USE_MATH_DEFINES exposes M_PI; NOMINMAX keeps windows.h from defining
+  # min/max macros that clobber std::min/std::max.
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc /bigobj")
+  set(CMAKE_CXX_FLAGS_RELEASE "/O2 /DNDEBUG")
+  add_compile_definitions(_USE_MATH_DEFINES NOMINMAX)
+  # The vendored abscab dependency uses malloc/free without including
+  # <cstdlib>, relying on transitive inclusion that MSVC does not provide.
+  # Force-include it for C++ sources (CUDA host compilation is unaffected).
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:/FIcstdlib>)
+else()
+  set(CMAKE_CXX_FLAGS "-fPIC -Wall -Wextra")
+  set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
+  set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -fno-math-errno")
+endif()
 
 # use ccache if available
 find_program(CCACHE_COMMAND NAMES ccache ccache-swig)
@@ -60,7 +74,20 @@ include_directories(${eigen_SOURCE_DIR})
 FetchContent_Declare(nlohmann_json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(nlohmann_json)
 
-find_package(LAPACK REQUIRED)
+if(MSVC)
+  # vcpkg's clapack (the only LAPACK provider on Windows that needs no Fortran
+  # toolchain) ships its LAPACK::LAPACK target through a FindLAPACK wrapper
+  # registered at a nonstandard path the toolchain does not auto-apply. Take
+  # its `lapack` config target directly and alias LAPACK::LAPACK to it, which
+  # is exactly what that wrapper does.
+  find_package(clapack CONFIG REQUIRED)
+  if(NOT TARGET LAPACK::LAPACK)
+    add_library(LAPACK::LAPACK INTERFACE IMPORTED)
+    target_link_libraries(LAPACK::LAPACK INTERFACE lapack)
+  endif()
+else()
+  find_package(LAPACK REQUIRED)
+endif()
 
 
 FetchContent_Declare(
@@ -93,7 +120,16 @@ set(abscab_sources "${abscab-cpp_SOURCE_DIR}/abscab/abscab.cc" "${abscab-cpp_SOU
 
 # Fix deprecation warning, abseil will change this default soon.
 set(ABSL_PROPAGATE_CXX_STD "ON")
-FetchContent_MakeAvailable(abseil-cpp indata2json)
+if(MSVC)
+  # indata2json is a Fortran tool that converts classic VMEC namelist inputs
+  # to JSON; it is invoked as a subprocess, not linked into any target. Its
+  # Fortran build needs a compiler compatible with the MSVC/Ninja generator,
+  # which is not present on this toolchain, so it is skipped on Windows. The
+  # JSON-input path (VmecInput.from_file) does not require it.
+  FetchContent_MakeAvailable(abseil-cpp)
+else()
+  FetchContent_MakeAvailable(abseil-cpp indata2json)
+endif()
 include_directories(${abseil-cpp_SOURCE_DIR})
 
 # Allow to retain include paths as used for Bazel build.
@@ -110,9 +146,25 @@ if(VMECPP_USE_CUDA)
   find_package(CUDAToolkit REQUIRED)
   set(CMAKE_CUDA_STANDARD 20)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-  # The .cu file gets linked into vmecpp_core, which is then linked into the
-  # shared Python module .so. Force -fPIC on nvcc's host compilation.
-  set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-fPIC")
+  # The .cu objects link into vmecpp_core and then into the shared Python
+  # module. On a GCC/Clang host nvcc needs -fPIC; on the MSVC host -fPIC is
+  # not a valid flag, and the host compilation instead needs /bigobj (the
+  # CUDA units are large) and /EHsc passed through -Xcompiler.
+  if(MSVC)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=/bigobj -Xcompiler=/EHsc")
+    # CMake injects a bare /utf-8 into the nvcc command line for MSVC, which
+    # nvcc misparses as a second input file; no CMake variable suppresses it.
+    # Route nvcc through a launcher that rewraps /utf-8 as -Xcompiler=/utf-8.
+    # Compiler launchers are honored by the Ninja and Makefile generators (use
+    # one of those on Windows, not the Visual Studio generator). find_program
+    # rather than find_package keeps this off pybind11's Python discovery.
+    find_program(VMECPP_LAUNCHER_PYTHON NAMES python3 python py REQUIRED)
+    set(CMAKE_CUDA_COMPILER_LAUNCHER
+        "${VMECPP_LAUNCHER_PYTHON}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/cmake/nvcc_utf8_launcher.py")
+  else()
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-fPIC")
+  endif()
   if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
     # sm_70 covers V100, sm_80 covers A100/H100, sm_89 covers Ada.
     set(CMAKE_CUDA_ARCHITECTURES "70;80;89")
@@ -136,7 +188,15 @@ target_link_libraries(vmecpp_core PRIVATE LAPACK::LAPACK)
 # The codelets are vendored under src/vmecpp/cpp/third_party/fftx_codelets/;
 # see that directory's README.md for what they cover and how to regenerate.
 # Pass -DVMECPP_USE_FFTX=OFF to fall back to the partial-DFT path.
-option(VMECPP_USE_FFTX "Use FFTX/SPIRAL kernels for toroidal transforms" ON)
+# The vendored FFTX codelets are machine-generated code that does not compile
+# under MSVC (over-long string literals, non-standard cast syntax), so the
+# option defaults off on Windows. The CUDA path uses cuFFT and the CPU
+# fallback is the partial-DFT transform, so neither build needs FFTX.
+if(MSVC)
+  option(VMECPP_USE_FFTX "Use FFTX/SPIRAL kernels for toroidal transforms" OFF)
+else()
+  option(VMECPP_USE_FFTX "Use FFTX/SPIRAL kernels for toroidal transforms" ON)
+endif()
 if(VMECPP_USE_FFTX)
   set(_fftx_dir "${PROJECT_SOURCE_DIR}/src/vmecpp/cpp/third_party/fftx_codelets")
   file(GLOB _fftx_iprdft_srcs CONFIGURE_DEPENDS
@@ -197,4 +257,6 @@ if(OpenMP_CXX_FOUND)
 endif()
 
 install(TARGETS _vmecpp LIBRARY DESTINATION vmecpp/cpp/.)
-install(TARGETS indata2json DESTINATION vmecpp/cpp/third_party/indata2json/)
+if(NOT MSVC)
+  install(TARGETS indata2json DESTINATION vmecpp/cpp/third_party/indata2json/)
+endif()

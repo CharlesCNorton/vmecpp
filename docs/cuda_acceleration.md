@@ -33,6 +33,26 @@ With the option on, the CUDA implementation replaces the CPU iteration body
 at compile time. `vmecpp.run` and `vmec_standalone` use it transparently for
 supported inputs.
 
+### Windows (MSVC)
+
+The same option builds natively on Windows with the MSVC host compiler. The
+system dependencies come from vcpkg (`vcpkg install hdf5 netcdf-c clapack`;
+clapack is the LAPACK provider that needs no Fortran compiler), and the build
+uses the Ninja generator, since the CUDA compiler launcher that adapts the
+MSVC command line is honored by Ninja but not by the Visual Studio generator:
+
+```bat
+cmake -B build -G Ninja -DVMECPP_USE_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=89 ^
+  -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build
+```
+
+FFTX and the `indata2json` namelist converter default off on MSVC (the former
+is generated code MSVC rejects, the latter needs a Fortran toolchain), and
+neither is used by the CUDA path. At runtime the vcpkg and CUDA `bin`
+directories must be on the module loader's search path; from Python, add them
+with `os.add_dll_directory` before importing `vmecpp`.
+
 ## Scope
 
 The CUDA build supports fixed-boundary and free-boundary,

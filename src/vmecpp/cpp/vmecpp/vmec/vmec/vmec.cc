@@ -1288,7 +1288,12 @@ absl::StatusOr<Vmec::SolveEqLoopStatus> Vmec::SolveEquilibriumLoop(
         {
           if (interrupt_callback_ && interrupt_callback_()) {
             m_liter_flag = false;
+            // MSVC's default OpenMP (2.0) lacks `atomic write`; the write is a
+            // single-writer write-once bool here, so it stays correct without
+            // it. GCC/Clang keep the atomic for memory visibility.
+#if defined(_OPENMP) && !defined(_MSC_VER)
 #pragma omp atomic write
+#endif
             interrupted_ = true;
             std::cout << "Received interrupt signal from Python thread.\n";
           }
@@ -1327,9 +1332,9 @@ absl::StatusOr<Vmec::SolveEqLoopStatus> Vmec::SolveEquilibriumLoop(
       }
     }
 
-#ifdef _OPENMP
+#if defined(_OPENMP) && !defined(_MSC_VER)
 #pragma omp atomic write
-#endif  // _OPENMP
+#endif  // _OPENMP, not MSVC (no `atomic write` in OpenMP 2.0)
     // update iter2_ for all threads, all threads have the same value of iter2,
     // it does not matter who does it.
     // bad resets didn't increment, iter2 in VMEC 8.52, so we need to compute
