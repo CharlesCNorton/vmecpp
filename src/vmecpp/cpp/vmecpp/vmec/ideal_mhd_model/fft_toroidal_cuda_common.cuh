@@ -3357,11 +3357,6 @@ __global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair(
     double* __restrict__ crmn_e, double* __restrict__ crmn_o,
     double* __restrict__ czmn_e, double* __restrict__ czmn_o,
     const std::uint8_t* __restrict__ d_active_per_cfg);
-__global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair_fused_REMOVED(
-    int n_config, int ns_local, int ns_force_local, int ns_con_local,
-    int nZnT, bool lthreed,
-    int nsMinF, int nsMinF1, int nsMinH, int nsMaxH, int jMaxRZ,
-    double deltaS);
 __global__ void k_force_norm_partials(int n_config, int ns_h, int nZnT, int nThetaEff,
                                         int nsMinH, int nsMaxH_minus_1,
                                         int ns_minus_2,
@@ -3951,6 +3946,15 @@ __global__ void k_apply_rz_pcr(int n_config, int mnsize, int ns_total, int num_b
                                  double* __restrict__ c_inout,
                                  const std::uint8_t* __restrict__ d_active_per_cfg);
 __global__ void k_apply_rz_thomas_serial(
+    int n_config, int mnsize, int ns_total, int num_basis,
+    const int* __restrict__ jMin, int jMax,
+    const double* __restrict__ a_in, const double* __restrict__ d_in,
+    const double* __restrict__ b_in, double* __restrict__ c_inout,
+    const std::uint8_t* __restrict__ d_active_per_cfg);
+// One block per (config, mn) row; the elimination ratios live in dynamic
+// shared memory sized to jMax, so this handles ns_total beyond the 1024
+// threads-per-block limit of the PCR solver. Used for ns_total > 1024.
+__global__ void k_apply_rz_thomas_block(
     int n_config, int mnsize, int ns_total, int num_basis,
     const int* __restrict__ jMin, int jMax,
     const double* __restrict__ a_in, const double* __restrict__ d_in,

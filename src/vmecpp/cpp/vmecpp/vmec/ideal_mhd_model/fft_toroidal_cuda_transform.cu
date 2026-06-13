@@ -664,7 +664,7 @@ void FourierToReal3DSymmFastPoloidalCuda(
     constexpr int WARPS_PER_BLOCK = 4;
     int z_total = ns_local * S.n_config_max;
     int z_blocks = (z_total + WARPS_PER_BLOCK - 1) / WARPS_PER_BLOCK;
-    dim3 v4_blocks(1, nZeta, z_blocks);
+    dim3 v4_blocks((nThetaReduced + 31) / 32, nZeta, z_blocks);
     dim3 v4_tpb(32, WARPS_PER_BLOCK, 1);
     S.TKBegin(CudaToroidalState::TK_SCATTER);
     // The v5 variant of the fused scatter caches the Y values

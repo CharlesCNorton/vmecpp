@@ -994,6 +994,23 @@ int GetNConfigMaxCuda() {
   return g_n_config_run;
 }
 
+int CudaMaxRadialResolution() {
+  // ns <= 1024 uses the PCR solver (one thread per radial row, bounded by the
+  // 1024 threads-per-block limit); larger ns uses the block-Thomas solver,
+  // which holds the elimination ratios in dynamic shared memory sized to ns.
+  // The device's opt-in shared-memory capacity therefore sets the ceiling.
+  int dev = 0;
+  if (cudaGetDevice(&dev) != cudaSuccess) return 1024;
+  int max_smem = 0;
+  if (cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlockOptin,
+                             dev) != cudaSuccess ||
+      max_smem <= 0) {
+    return 1024;
+  }
+  const int blk_limit = max_smem / static_cast<int>(sizeof(double));
+  return blk_limit > 1024 ? blk_limit : 1024;
+}
+
 bool CudaVramBudgetCuda(long long n_cfg, long long ns, long long mpol,
                         long long ntor, long long nZeta, long long nThetaEff,
                         long long* needed_bytes, long long* free_bytes) {

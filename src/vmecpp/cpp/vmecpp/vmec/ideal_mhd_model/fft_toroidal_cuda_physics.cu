@@ -112,8 +112,9 @@ void ComputeJacobianCuda(
     if (jac_pair_env && (ns_h % 2 == 0)) {
       dim3 fblocks_p((nZnT + TPB - 1) / TPB, ns_h / 2, S.n_config_max);
       dim3 ftpb_p(TPB, 2, 1);
-      // 8 fields cached. 12 KB per block at nZnT=192.
-      size_t smem_bytes = (size_t)sizeof(double) * 8 * (size_t)nZnT;
+      // 8 fields cached per x-lane (blockDim.x), so 4 KB per block at TPB=64,
+      // independent of the poloidal resolution.
+      size_t smem_bytes = (size_t)sizeof(double) * 8 * (size_t)TPB;
       k_jacobian_metric_dvdsh_atomic_pair<<<fblocks_p, ftpb_p, smem_bytes, S.stream>>>(
           S.n_config_max, S.ns_local_cached,
           ns_h, jF_in_offset, nZnT, s.nThetaEff, s.lthreed,
@@ -1011,7 +1012,8 @@ void ComputeMHDForcesCuda(
   if (mhd_pair_env && (ns_force_local % 2 == 0)) {
     dim3 blocks_p((nZnT + TPB - 1) / TPB, ns_force_local / 2, S.n_config_max);
     dim3 tpb_p(TPB, 2, 1);
-    size_t smem_bytes = (size_t)sizeof(double) * 10 * (size_t)nZnT;
+    // 10 fields cached per x-lane (blockDim.x), independent of nZnT.
+    size_t smem_bytes = (size_t)sizeof(double) * 10 * (size_t)TPB;
     k_compute_mhd_forces_pair<<<blocks_p, tpb_p, smem_bytes, S.stream>>>(
         S.n_config_max, S.ns_local_cached, ns_force_local, nZnT, s.lthreed,
         r.nsMinF, r.nsMinF1, r.nsMinH, r.nsMaxH, jMaxRZ, deltaS,
@@ -2029,10 +2031,53 @@ int ApplyRZPreconditionerCuda(
           "RZ solve active\n");
     }
   }
+  // VMECPP_RZ_FORCE_BLOCK=1: take the block-Thomas path even for ns <= 1024.
+  // Diagnostic only: lets the large-ns solver be exercised and compared
+  // against the one-thread-per-row serial Thomas at small ns.
+  static int rz_force_block_env = -1;
+  if (rz_force_block_env < 0) {
+    const char* e = std::getenv("VMECPP_RZ_FORCE_BLOCK");
+    rz_force_block_env = (e && std::atoi(e) > 0) ? 1 : 0;
+  }
 
   S.TKBegin(CudaToroidalState::TK_APPLY_RZ);
 
-  if (rz_ir_fp32_env && S.d_rz_c_orig_R && S.d_rz_x_saved_R) {
+  if (jMaxRZ > 1024 || rz_force_block_env) {
+    // The PCR solver needs one thread per radial point and so cannot exceed
+    // 1024 (CUDA threads-per-block). For larger radial grids, solve each
+    // (config, mn) tridiagonal with one block running serial Thomas, holding
+    // the elimination ratios in dynamic shared memory sized to jMax. This is
+    // sequential per row but parallel across the n_config * mnsize rows.
+    const int TPB_BLK = 128;
+    size_t blk_smem = (size_t)jMaxRZ * sizeof(double);
+    static int blk_max_smem = -1;
+    if (blk_max_smem < 0) {
+      int dev = 0;
+      cudaGetDevice(&dev);
+      cudaDeviceGetAttribute(&blk_max_smem,
+                             cudaDevAttrMaxSharedMemoryPerBlockOptin, dev);
+    }
+    if (blk_smem > (size_t)blk_max_smem) {
+      cuda_check(cudaErrorInvalidValue,
+                 "rz radial solve: ns exceeds the shared-memory capacity of "
+                 "the large-ns block-Thomas solver");
+    }
+    if (blk_smem > (size_t)(48 * 1024)) {
+      cudaFuncSetAttribute(k_apply_rz_thomas_block,
+                           cudaFuncAttributeMaxDynamicSharedMemorySize,
+                           (int)blk_smem);
+    }
+    int total_rows = S.n_config_max * mnsize;
+    dim3 blk_grid(total_rows, 1, 1);
+    k_apply_rz_thomas_block<<<blk_grid, TPB_BLK, blk_smem, st>>>(
+        S.n_config_max, mnsize, ns_total, num_basis, d_jMin, jMaxRZ,
+        S.d_rz_aR, S.d_rz_dR, S.d_rz_bR, d_cR, S.d_active_per_cfg);
+    cuda_check(cudaGetLastError(), "k_thomas_block R");
+    k_apply_rz_thomas_block<<<blk_grid, TPB_BLK, blk_smem, st>>>(
+        S.n_config_max, mnsize, ns_total, num_basis, d_jMin, jMaxRZ,
+        S.d_rz_aZ, S.d_rz_dZ, S.d_rz_bZ, d_cZ, S.d_active_per_cfg);
+    cuda_check(cudaGetLastError(), "k_thomas_block Z");
+  } else if (rz_ir_fp32_env && S.d_rz_c_orig_R && S.d_rz_x_saved_R) {
     // Bytes per (R or Z) c buffer: matches the EnsureRZBuffers c_bytes.
     const size_t c_bytes = sizeof(double) * (size_t)S.n_config_max *
                             (size_t)mnsize * (size_t)num_basis *

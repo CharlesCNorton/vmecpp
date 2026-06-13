@@ -1301,8 +1301,10 @@ __global__ void k_scatter_main_and_con_v4(
   if (d_active_per_cfg && !d_active_per_cfg[config]) return;
   int k = blockIdx.y;
   int lane = threadIdx.x;
-  if (lane >= nThetaReduced) return;
-  int l = lane;
+  // One x-block per 32 poloidal points, so nThetaReduced > 32 is covered by
+  // multiple warps (matches the forward and scatter-basis kernels).
+  int l = blockIdx.x * blockDim.x + lane;
+  if (l >= nThetaReduced) return;
 
   size_t cfg_Y    = (size_t)config * (size_t)ns_local * (size_t)mpol *
                     (size_t)kBatch * (size_t)nZeta;
@@ -1443,8 +1445,10 @@ __global__ __launch_bounds__(128, 5) void k_scatter_main_and_con_v5(
   }
   __syncwarp();
 
-  if (lane >= nThetaReduced) return;
-  int l = lane;
+  // One x-block per 32 poloidal points (matches the v4 grid), covering
+  // nThetaReduced > 32 across multiple warps.
+  int l = blockIdx.x * blockDim.x + lane;
+  if (l >= nThetaReduced) return;
 
   double r1e_acc = 0.0, r1o_acc = 0.0;
   double rue_acc = 0.0, ruo_acc = 0.0;
@@ -2994,29 +2998,33 @@ __global__ __launch_bounds__(128, 5) void k_jacobian_metric_dvdsh_atomic_pair(
   // SHARED jF index: jH_lo's jF_out == jH_hi's jF_in == jH_lo + 1 + offset.
   int jF_shared = jH_pair * 2 + 1 + jF_in_offset;
 
-  // Shared layout: 8 fields × nZnT. Field order: r1_e, r1_o, ru_e, ru_o,
-  // z1_e, z1_o, zu_e, zu_o. 12 KB per block at nZnT=192.
+  // Shared layout: 8 fields, one slot per x-lane (blockDim.x), shared between
+  // the two jH y-lanes at the same kl. Field order: r1_e, r1_o, ru_e, ru_o,
+  // z1_e, z1_o, zu_e, zu_o. Sized to the block's x-extent rather than nZnT, so
+  // the requirement is independent of the poloidal resolution.
+  const int sj = threadIdx.x;
+  const int sw = blockDim.x;
   extern __shared__ double s_jac_buf[];
-  double* s_r1e = s_jac_buf + 0 * nZnT;
-  double* s_r1o = s_jac_buf + 1 * nZnT;
-  double* s_rue = s_jac_buf + 2 * nZnT;
-  double* s_ruo = s_jac_buf + 3 * nZnT;
-  double* s_z1e = s_jac_buf + 4 * nZnT;
-  double* s_z1o = s_jac_buf + 5 * nZnT;
-  double* s_zue = s_jac_buf + 6 * nZnT;
-  double* s_zuo = s_jac_buf + 7 * nZnT;
+  double* s_r1e = s_jac_buf + 0 * sw;
+  double* s_r1o = s_jac_buf + 1 * sw;
+  double* s_rue = s_jac_buf + 2 * sw;
+  double* s_ruo = s_jac_buf + 3 * sw;
+  double* s_z1e = s_jac_buf + 4 * sw;
+  double* s_z1o = s_jac_buf + 5 * sw;
+  double* s_zue = s_jac_buf + 6 * sw;
+  double* s_zuo = s_jac_buf + 7 * sw;
 
   // Cooperative load: y=0 lanes populate shared from jF_shared.
   if (my_jH_offset == 0) {
     size_t i = cfg_full + (size_t)jF_shared * (size_t)nZnT + (size_t)kl;
-    s_r1e[kl] = r1_e[i];
-    s_r1o[kl] = r1_o[i];
-    s_rue[kl] = ru_e[i];
-    s_ruo[kl] = ru_o[i];
-    s_z1e[kl] = z1_e[i];
-    s_z1o[kl] = z1_o[i];
-    s_zue[kl] = zu_e[i];
-    s_zuo[kl] = zu_o[i];
+    s_r1e[sj] = r1_e[i];
+    s_r1o[sj] = r1_o[i];
+    s_rue[sj] = ru_e[i];
+    s_ruo[sj] = ru_o[i];
+    s_z1e[sj] = z1_e[i];
+    s_z1o[sj] = z1_o[i];
+    s_zue[sj] = zu_e[i];
+    s_zuo[sj] = zu_o[i];
   }
   __syncthreads();
 
@@ -3028,10 +3036,10 @@ __global__ __launch_bounds__(128, 5) void k_jacobian_metric_dvdsh_atomic_pair(
 
   double r1e_i, r1o_i, z1e_i, z1o_i, rue_i, ruo_i, zue_i, zuo_i;
   if (in_is_shared) {
-    r1e_i = s_r1e[kl]; r1o_i = s_r1o[kl];
-    rue_i = s_rue[kl]; ruo_i = s_ruo[kl];
-    z1e_i = s_z1e[kl]; z1o_i = s_z1o[kl];
-    zue_i = s_zue[kl]; zuo_i = s_zuo[kl];
+    r1e_i = s_r1e[sj]; r1o_i = s_r1o[sj];
+    rue_i = s_rue[sj]; ruo_i = s_ruo[sj];
+    z1e_i = s_z1e[sj]; z1o_i = s_z1o[sj];
+    zue_i = s_zue[sj]; zuo_i = s_zuo[sj];
   } else {
     size_t i_in = cfg_full + (size_t)jF_in * (size_t)nZnT + (size_t)kl;
     r1e_i = r1_e[i_in]; r1o_i = r1_o[i_in];
@@ -3042,10 +3050,10 @@ __global__ __launch_bounds__(128, 5) void k_jacobian_metric_dvdsh_atomic_pair(
 
   double r1e_o, r1o_o, z1e_o, z1o_o, rue_o, ruo_o, zue_o, zuo_o;
   if (out_is_shared) {
-    r1e_o = s_r1e[kl]; r1o_o = s_r1o[kl];
-    rue_o = s_rue[kl]; ruo_o = s_ruo[kl];
-    z1e_o = s_z1e[kl]; z1o_o = s_z1o[kl];
-    zue_o = s_zue[kl]; zuo_o = s_zuo[kl];
+    r1e_o = s_r1e[sj]; r1o_o = s_r1o[sj];
+    rue_o = s_rue[sj]; ruo_o = s_ruo[sj];
+    z1e_o = s_z1e[sj]; z1o_o = s_z1o[sj];
+    zue_o = s_zue[sj]; zuo_o = s_zuo[sj];
   } else {
     size_t i_out = cfg_full + (size_t)jF_out * (size_t)nZnT + (size_t)kl;
     r1e_o = r1_e[i_out]; r1o_o = r1_o[i_out];
@@ -3960,35 +3968,39 @@ __global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair(
   int jH_shared_local = jF_lo_global - nsMinH;
   bool shared_valid = (jH_shared_local >= 0 && jH_shared_local < ns_h_total);
 
-  // Shared memory layout: 10 fields × nZnT slots, addressed by offset.
-  // Field order: totalPressure, r12, ru12, zu12, rs, zs, tau, gsqrt, bsupu, bsupv.
+  // Shared memory layout: 10 fields, one slot per x-lane (blockDim.x), shared
+  // between the two jF y-lanes at the same kl. Field order: totalPressure, r12,
+  // ru12, zu12, rs, zs, tau, gsqrt, bsupu, bsupv. Sized to the block's x-extent
+  // rather than nZnT, so it is independent of the poloidal resolution.
+  const int sj = threadIdx.x;
+  const int sw = blockDim.x;
   extern __shared__ double s_pair_buf[];
-  double* s_tp    = s_pair_buf + 0 * nZnT;
-  double* s_r12   = s_pair_buf + 1 * nZnT;
-  double* s_ru12  = s_pair_buf + 2 * nZnT;
-  double* s_zu12  = s_pair_buf + 3 * nZnT;
-  double* s_rs    = s_pair_buf + 4 * nZnT;
-  double* s_zs    = s_pair_buf + 5 * nZnT;
-  double* s_tau   = s_pair_buf + 6 * nZnT;
-  double* s_gsqrt = s_pair_buf + 7 * nZnT;
-  double* s_bsupu = s_pair_buf + 8 * nZnT;
-  double* s_bsupv = s_pair_buf + 9 * nZnT;
+  double* s_tp    = s_pair_buf + 0 * sw;
+  double* s_r12   = s_pair_buf + 1 * sw;
+  double* s_ru12  = s_pair_buf + 2 * sw;
+  double* s_zu12  = s_pair_buf + 3 * sw;
+  double* s_rs    = s_pair_buf + 4 * sw;
+  double* s_zs    = s_pair_buf + 5 * sw;
+  double* s_tau   = s_pair_buf + 6 * sw;
+  double* s_gsqrt = s_pair_buf + 7 * sw;
+  double* s_bsupu = s_pair_buf + 8 * sw;
+  double* s_bsupv = s_pair_buf + 9 * sw;
 
   // Cooperative load: only the y=0 thread populates shared. Its jH_out_local
   // equals jH_shared_local by construction. It will also use these values
   // immediately below for its own jH_out computation.
   if (my_jF_offset == 0 && shared_valid) {
     size_t i_shared = cfg_half + (size_t)jH_shared_local * (size_t)nZnT + (size_t)kl;
-    s_tp[kl]    = totalPressure[i_shared];
-    s_r12[kl]   = r12[i_shared];
-    s_ru12[kl]  = ru12[i_shared];
-    s_zu12[kl]  = zu12[i_shared];
-    s_rs[kl]    = rs[i_shared];
-    s_zs[kl]    = zs[i_shared];
-    s_tau[kl]   = tau[i_shared];
-    s_gsqrt[kl] = gsqrt[i_shared];
-    s_bsupu[kl] = bsupu[i_shared];
-    s_bsupv[kl] = bsupv[i_shared];
+    s_tp[sj]    = totalPressure[i_shared];
+    s_r12[sj]   = r12[i_shared];
+    s_ru12[sj]  = ru12[i_shared];
+    s_zu12[sj]  = zu12[i_shared];
+    s_rs[sj]    = rs[i_shared];
+    s_zs[sj]    = zs[i_shared];
+    s_tau[sj]   = tau[i_shared];
+    s_gsqrt[sj] = gsqrt[i_shared];
+    s_bsupu[sj] = bsupu[i_shared];
+    s_bsupv[sj] = bsupv[i_shared];
   }
   __syncthreads();
 
@@ -4020,16 +4032,16 @@ __global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair(
   if (jF_global > 0 && jH_in_local >= 0 && jH_in_local < ns_h_total) {
     double tp, r12v, ru12v, zu12v, rsv, zsv, tauv, gv, bu, bv;
     if (jH_in_is_shared) {
-      tp    = s_tp[kl];
-      r12v  = s_r12[kl];
-      ru12v = s_ru12[kl];
-      zu12v = s_zu12[kl];
-      rsv   = s_rs[kl];
-      zsv   = s_zs[kl];
-      tauv  = s_tau[kl];
-      gv    = s_gsqrt[kl];
-      bu    = s_bsupu[kl];
-      bv    = s_bsupv[kl];
+      tp    = s_tp[sj];
+      r12v  = s_r12[sj];
+      ru12v = s_ru12[sj];
+      zu12v = s_zu12[sj];
+      rsv   = s_rs[sj];
+      zsv   = s_zs[sj];
+      tauv  = s_tau[sj];
+      gv    = s_gsqrt[sj];
+      bu    = s_bsupu[sj];
+      bv    = s_bsupv[sj];
     } else {
       size_t i_in = cfg_half + (size_t)jH_in_local * (size_t)nZnT + (size_t)kl;
       tp    = totalPressure[i_in];
@@ -4061,16 +4073,16 @@ __global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair(
   if (jH_out_local >= 0 && jH_out_local < ns_h_total) {
     double tp, r12v, ru12v, zu12v, rsv, zsv, tauv, gv, bu, bv;
     if (jH_out_is_shared) {
-      tp    = s_tp[kl];
-      r12v  = s_r12[kl];
-      ru12v = s_ru12[kl];
-      zu12v = s_zu12[kl];
-      rsv   = s_rs[kl];
-      zsv   = s_zs[kl];
-      tauv  = s_tau[kl];
-      gv    = s_gsqrt[kl];
-      bu    = s_bsupu[kl];
-      bv    = s_bsupv[kl];
+      tp    = s_tp[sj];
+      r12v  = s_r12[sj];
+      ru12v = s_ru12[sj];
+      zu12v = s_zu12[sj];
+      rsv   = s_rs[sj];
+      zsv   = s_zs[sj];
+      tauv  = s_tau[sj];
+      gv    = s_gsqrt[sj];
+      bu    = s_bsupu[sj];
+      bv    = s_bsupv[sj];
     } else {
       size_t i_out = cfg_half + (size_t)jH_out_local * (size_t)nZnT + (size_t)kl;
       tp    = totalPressure[i_out];
@@ -4175,217 +4187,11 @@ __global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair(
   bzmn_e[f_idx] = bzmn_e_v; bzmn_o[f_idx] = bzmn_o_v;
 }
 
-// (Removed) k_compute_mhd_forces_pair_fused: an attempted fusion of the pair
-// kernel with assembleTotalForces, intending to eliminate the brmn/bzmn
-// round-trip through global memory. NOT FEASIBLE: assemble's brcon comes
-// from gCon, which is produced by DealiasInv that runs AFTER ComputeMHDForces.
-// The chain is mhd_forces -> forward_FFT(brmn) -> effectiveConstraintForce
-// -> dealias_inv -> assemble. The L2 cache (48 MB on Ada) already holds the
-// brmn/bzmn buffers (38 MB at N=64), so the round-trip is L2-served at
-// ~5 TB/s, costing ~0.3pct of wall; not worth a graph-level restructure.
-// Implementation removed; see comment above for rationale.
-#if 0
-__global__ __launch_bounds__(128, 6) void k_compute_mhd_forces_pair_fused_REMOVED(
-    int n_config, int ns_local, int ns_force_local, int ns_con_local,
-    int nZnT, bool lthreed,
-    int nsMinF, int nsMinF1, int nsMinH, int nsMaxH, int jMaxRZ,
-    double deltaS) {
-  int config = blockIdx.z;
-  if (config >= n_config) return;
-  int jF_pair = blockIdx.y;
-  int my_jF_offset = threadIdx.y;
-  int jF_local = jF_pair * 2 + my_jF_offset;
-  if (jF_local >= ns_force_local) return;
-  int kl = blockIdx.x * blockDim.x + threadIdx.x;
-  if (kl >= nZnT) return;
-  int ns_h_total = nsMaxH - nsMinH;
-  size_t cfg_full  = (size_t)config * (size_t)ns_local       * (size_t)nZnT;
-  size_t cfg_half  = (size_t)config * (size_t)ns_h_total     * (size_t)nZnT;
-  size_t cfg_force = (size_t)config * (size_t)ns_force_local * (size_t)nZnT;
-  size_t cfg_con   = (size_t)config * (size_t)ns_con_local   * (size_t)nZnT;
-  size_t f_idx = cfg_force + (size_t)jF_local * (size_t)nZnT + (size_t)kl;
-  size_t c_idx = cfg_con   + (size_t)jF_local * (size_t)nZnT + (size_t)kl;
-  int jF_global = jF_local + nsMinF;
-
-  int jF_lo_global = jF_pair * 2 + nsMinF;
-  int jH_shared_local = jF_lo_global - nsMinH;
-  bool shared_valid = (jH_shared_local >= 0 && jH_shared_local < ns_h_total);
-
-  extern __shared__ double s_pair_buf[];
-  double* s_tp    = s_pair_buf + 0 * nZnT;
-  double* s_r12   = s_pair_buf + 1 * nZnT;
-  double* s_ru12  = s_pair_buf + 2 * nZnT;
-  double* s_zu12  = s_pair_buf + 3 * nZnT;
-  double* s_rs    = s_pair_buf + 4 * nZnT;
-  double* s_zs    = s_pair_buf + 5 * nZnT;
-  double* s_tau   = s_pair_buf + 6 * nZnT;
-  double* s_gsqrt = s_pair_buf + 7 * nZnT;
-  double* s_bsupu = s_pair_buf + 8 * nZnT;
-  double* s_bsupv = s_pair_buf + 9 * nZnT;
-
-  if (my_jF_offset == 0 && shared_valid) {
-    size_t i_shared = cfg_half + (size_t)jH_shared_local * (size_t)nZnT + (size_t)kl;
-    s_tp[kl]    = totalPressure[i_shared];
-    s_r12[kl]   = r12[i_shared];
-    s_ru12[kl]  = ru12[i_shared];
-    s_zu12[kl]  = zu12[i_shared];
-    s_rs[kl]    = rs[i_shared];
-    s_zs[kl]    = zs[i_shared];
-    s_tau[kl]   = tau[i_shared];
-    s_gsqrt[kl] = gsqrt[i_shared];
-    s_bsupu[kl] = bsupu[i_shared];
-    s_bsupv[kl] = bsupv[i_shared];
-  }
-  __syncthreads();
-
-  // sqrtSF_jF is needed both for mhd compute (under jF_global < jMaxRZ) and
-  // for the always-run assemble work below.
-  int jF_full_local = jF_global - nsMinF1;
-  double sqrtSF_jF = sqrtSF[jF_full_local];
-
-  // Pre-zero all output locals. mhd compute populates them if jF_global <
-  // jMaxRZ; otherwise they stay zero (matching the original mhd kernel's
-  // zero-output path).
-  double armn_e_v = 0.0, armn_o_v = 0.0;
-  double azmn_e_v = 0.0, azmn_o_v = 0.0;
-  double brmn_e_v = 0.0, brmn_o_v = 0.0;
-  double bzmn_e_v = 0.0, bzmn_o_v = 0.0;
-  double crmn_e_v = 0.0, crmn_o_v = 0.0;
-  double czmn_e_v = 0.0, czmn_o_v = 0.0;
-
-  if (jF_global < jMaxRZ) {
-    int jH_in_local  = jF_global - 1 - nsMinH;
-    int jH_out_local = jF_global - nsMinH;
-    bool jH_in_is_shared  = (jH_in_local  == jH_shared_local) && shared_valid;
-    bool jH_out_is_shared = (jH_out_local == jH_shared_local) && shared_valid;
-
-    double sqrtSHi = 1.0, sqrtSHo = 1.0;
-    double P_i = 0.0, rup_i = 0.0, zup_i = 0.0, rsp_i = 0.0, zsp_i = 0.0;
-    double taup_i = 0.0;
-    double gbubu_i = 0.0, gbubv_i = 0.0, gbvbv_i = 0.0;
-    if (jF_global > 0 && jH_in_local >= 0 && jH_in_local < ns_h_total) {
-      double tp, r12v, ru12v, zu12v, rsv, zsv, tauv, gv, bu, bv;
-      if (jH_in_is_shared) {
-        tp = s_tp[kl]; r12v = s_r12[kl]; ru12v = s_ru12[kl]; zu12v = s_zu12[kl];
-        rsv = s_rs[kl]; zsv = s_zs[kl]; tauv = s_tau[kl]; gv = s_gsqrt[kl];
-        bu = s_bsupu[kl]; bv = s_bsupv[kl];
-      } else {
-        size_t i_in = cfg_half + (size_t)jH_in_local * (size_t)nZnT + (size_t)kl;
-        tp = totalPressure[i_in]; r12v = r12[i_in]; ru12v = ru12[i_in];
-        zu12v = zu12[i_in]; rsv = rs[i_in]; zsv = zs[i_in]; tauv = tau[i_in];
-        gv = gsqrt[i_in]; bu = bsupu[i_in]; bv = bsupv[i_in];
-      }
-      P_i = r12v * tp; rup_i = ru12v * P_i; zup_i = zu12v * P_i;
-      rsp_i = rsv * P_i; zsp_i = zsv * P_i; taup_i = tauv * tp;
-      gbubu_i = gv * bu * bu; gbubv_i = gv * bu * bv; gbvbv_i = gv * bv * bv;
-      sqrtSHi = sqrtSH[jH_in_local];
-    }
-
-    double P_o = 0.0, rup_o = 0.0, zup_o = 0.0, rsp_o = 0.0, zsp_o = 0.0;
-    double taup_o = 0.0;
-    double gbubu_o = 0.0, gbubv_o = 0.0, gbvbv_o = 0.0;
-    if (jH_out_local >= 0 && jH_out_local < ns_h_total) {
-      double tp, r12v, ru12v, zu12v, rsv, zsv, tauv, gv, bu, bv;
-      if (jH_out_is_shared) {
-        tp = s_tp[kl]; r12v = s_r12[kl]; ru12v = s_ru12[kl]; zu12v = s_zu12[kl];
-        rsv = s_rs[kl]; zsv = s_zs[kl]; tauv = s_tau[kl]; gv = s_gsqrt[kl];
-        bu = s_bsupu[kl]; bv = s_bsupv[kl];
-      } else {
-        size_t i_out = cfg_half + (size_t)jH_out_local * (size_t)nZnT + (size_t)kl;
-        tp = totalPressure[i_out]; r12v = r12[i_out]; ru12v = ru12[i_out];
-        zu12v = zu12[i_out]; rsv = rs[i_out]; zsv = zs[i_out]; tauv = tau[i_out];
-        gv = gsqrt[i_out]; bu = bsupu[i_out]; bv = bsupv[i_out];
-      }
-      P_o = r12v * tp; rup_o = ru12v * P_o; zup_o = zu12v * P_o;
-      rsp_o = rsv * P_o; zsp_o = zsv * P_o; taup_o = tauv * tp;
-      gbubu_o = gv * bu * bu; gbubv_o = gv * bu * bv; gbvbv_o = gv * bv * bv;
-      sqrtSHo = sqrtSH[jH_out_local];
-    }
-
-    size_t g_idx = cfg_full + (size_t)jF_full_local * (size_t)nZnT + (size_t)kl;
-    double r1e = r1_e[g_idx], r1o = r1_o[g_idx];
-    double rue = ru_e[g_idx], ruo = ru_o[g_idx];
-    double zue = zu_e[g_idx], zuo = zu_o[g_idx];
-    double z1o = z1_o[g_idx];
-    double sFull = sqrtSF_jF * sqrtSF_jF;
-
-    double invDS = 1.0 / deltaS;
-    double invSHo = 1.0 / sqrtSHo;
-    double invSHi = 1.0 / sqrtSHi;
-    double P_avg = 0.5 * (P_o + P_i);
-    double P_wavg = 0.5 * (P_o * invSHo + P_i * invSHi);
-    double gbubu_avg = 0.5 * (gbubu_o + gbubu_i);
-    double gbubu_wavg = 0.5 * (gbubu_o * sqrtSHo + gbubu_i * sqrtSHi);
-    double gbvbv_avg = 0.5 * (gbvbv_o + gbvbv_i);
-    double gbvbv_wavg = 0.5 * (gbvbv_o * sqrtSHo + gbvbv_i * sqrtSHi);
-
-    armn_e_v = (zup_o - zup_i) * invDS + 0.5 * (taup_o + taup_i)
-             - gbvbv_avg * r1e - gbvbv_wavg * r1o;
-    armn_o_v = (zup_o * sqrtSHo - zup_i * sqrtSHi) * invDS
-             - 0.5 * P_wavg * zue - 0.5 * P_avg * zuo
-             + 0.5 * (taup_o * sqrtSHo + taup_i * sqrtSHi)
-             - gbvbv_wavg * r1e - gbvbv_avg * r1o * sFull;
-    azmn_e_v = -(rup_o - rup_i) * invDS;
-    azmn_o_v = -(rup_o * sqrtSHo - rup_i * sqrtSHi) * invDS
-             + 0.5 * P_wavg * rue + 0.5 * P_avg * ruo;
-    brmn_e_v = 0.5 * (zsp_o + zsp_i) + 0.5 * P_wavg * z1o
-             - gbubu_avg * rue - gbubu_wavg * ruo;
-    brmn_o_v = 0.5 * (zsp_o * sqrtSHo + zsp_i * sqrtSHi)
-             + 0.5 * P_avg * z1o
-             - gbubu_wavg * rue - gbubu_avg * ruo * sFull;
-    bzmn_e_v = -0.5 * (rsp_o + rsp_i) - 0.5 * P_wavg * r1o
-             - gbubu_avg * zue - gbubu_wavg * zuo;
-    bzmn_o_v = -0.5 * (rsp_o * sqrtSHo + rsp_i * sqrtSHi)
-             - 0.5 * P_avg * r1o
-             - gbubu_wavg * zue - gbubu_avg * zuo * sFull;
-
-    if (lthreed) {
-      double gbubv_avg = 0.5 * (gbubv_o + gbubv_i);
-      double gbubv_wavg = 0.5 * (gbubv_o * sqrtSHo + gbubv_i * sqrtSHi);
-      double rve = rv_e[g_idx], rvo = rv_o[g_idx];
-      double zve = zv_e[g_idx], zvo = zv_o[g_idx];
-      brmn_e_v -= gbubv_avg * rve + gbubv_wavg * rvo;
-      brmn_o_v -= gbubv_wavg * rve + gbubv_avg * rvo * sFull;
-      bzmn_e_v -= gbubv_avg * zve + gbubv_wavg * zvo;
-      bzmn_o_v -= gbubv_wavg * zve + gbubv_avg * zvo * sFull;
-      crmn_e_v = gbubv_avg * rue + gbubv_wavg * ruo
-               + gbvbv_avg * rve + gbvbv_wavg * rvo;
-      crmn_o_v = gbubv_wavg * rue + gbubv_avg * ruo * sFull
-               + gbvbv_wavg * rve + gbvbv_avg * rvo * sFull;
-      czmn_e_v = gbubv_avg * zue + gbubv_wavg * zuo
-               + gbvbv_avg * zve + gbvbv_wavg * zvo;
-      czmn_o_v = gbubv_wavg * zue + gbubv_avg * zuo * sFull
-               + gbvbv_wavg * zve + gbvbv_avg * zvo * sFull;
-    }
-  }
-  // assemble_total: ALWAYS runs (writes to brmn/bzmn/frcon/fzcon).
-  // For jF_global >= jMaxRZ, brmn/bzmn are still zero so brcon/bzcon become
-  // the only contribution. frcon/fzcon depend on ruFull/zuFull/gCon only.
-  double rC = rCon[c_idx], rC0 = rCon0[c_idx];
-  double zC = zCon[c_idx], zC0 = zCon0[c_idx];
-  double gc = gCon[c_idx];
-  double ru_a = ruFull[c_idx], zu_a = zuFull[c_idx];
-  double brcon = (rC - rC0) * gc;
-  double bzcon = (zC - zC0) * gc;
-  double frce = ru_a * gc;
-  double fzce = zu_a * gc;
-  brmn_e_v += brcon;
-  brmn_o_v += brcon * sqrtSF_jF;
-  bzmn_e_v += bzcon;
-  bzmn_o_v += bzcon * sqrtSF_jF;
-
-  armn_e[f_idx] = armn_e_v; armn_o[f_idx] = armn_o_v;
-  azmn_e[f_idx] = azmn_e_v; azmn_o[f_idx] = azmn_o_v;
-  brmn_e[f_idx] = brmn_e_v; brmn_o[f_idx] = brmn_o_v;
-  bzmn_e[f_idx] = bzmn_e_v; bzmn_o[f_idx] = bzmn_o_v;
-  frcon_e[f_idx] = frce;    frcon_o[f_idx] = frce * sqrtSF_jF;
-  fzcon_e[f_idx] = fzce;    fzcon_o[f_idx] = fzce * sqrtSF_jF;
-  if (lthreed) {
-    crmn_e[f_idx] = crmn_e_v; crmn_o[f_idx] = crmn_o_v;
-    czmn_e[f_idx] = czmn_e_v; czmn_o[f_idx] = czmn_o_v;
-  }
-}
-#endif  // 0 (k_compute_mhd_forces_pair_fused removed)
+// ComputeMHDForces is deliberately not fused with assembleTotalForces: the
+// latter's brcon comes from gCon, produced by DealiasInv, which runs after
+// ComputeMHDForces, and the brmn/bzmn round-trip through global memory is
+// served from L2 (about 0.3% of wall on Ada), so the fusion is not worth a
+// graph-level restructure.
 
 // k_force_norm_partials: per surface jH, SINGLE THREAD serial kl-loop
 // matching CPU's accumulation order exactly. The prior parallel-strided
@@ -8403,6 +8209,65 @@ __global__ void k_apply_rz_thomas_serial(
     }
     for (int j = jMax - 2; j > j0 - 1; --j) {
       c[j] -= a_loc[j] * c[j + 1];
+    }
+  }
+}
+
+// k_apply_rz_thomas_block: same serial Thomas elimination as
+// k_apply_rz_thomas_serial, but one block per (config, mn) row with the
+// elimination ratios in dynamic shared memory instead of a fixed local
+// array. This removes the ns_total <= 1024 ceiling that the PCR solver
+// inherits from the 1024 threads-per-block limit: the radial recurrence is
+// sequential, so a single thread walks it while the block's other threads
+// only cooperate on the load. The dynamic shared array is sized to jMax by
+// the launch. Used for ns_total > 1024.
+__global__ void k_apply_rz_thomas_block(
+    int n_config, int mnsize, int ns_total, int num_basis,
+    const int* __restrict__ jMin, int jMax,
+    const double* __restrict__ a_in, const double* __restrict__ d_in,
+    const double* __restrict__ b_in, double* __restrict__ c_inout,
+    const std::uint8_t* __restrict__ d_active_per_cfg) {
+  int row = blockIdx.x;
+  int config = row / mnsize;
+  int mn = row - config * mnsize;
+  if (config >= n_config) return;
+  if (d_active_per_cfg && !d_active_per_cfg[config]) return;
+  int j0 = jMin[mn];
+  if (jMax - j0 <= 0) return;
+  size_t r0 = ((size_t)config * (size_t)mnsize + (size_t)mn) *
+              (size_t)ns_total;
+  size_t cfg_c = (size_t)config * (size_t)mnsize * (size_t)num_basis *
+                 (size_t)ns_total;
+  extern __shared__ double s_aloc[];  // [jMax], only [j0, jMax) is used
+
+  // Cooperative load of the sub-diagonal into shared memory.
+  for (int j = j0 + threadIdx.x; j < jMax; j += blockDim.x) {
+    s_aloc[j] = a_in[r0 + j];
+  }
+  __syncthreads();
+
+  // Forward elimination of the ratios (sequential recurrence).
+  if (threadIdx.x == 0) {
+    s_aloc[j0] /= d_in[r0 + j0];
+    for (int j = j0 + 1; j < jMax - 1; ++j) {
+      const double denominator = d_in[r0 + j] - s_aloc[j - 1] * b_in[r0 + j];
+      s_aloc[j] /= denominator;
+    }
+  }
+  __syncthreads();
+
+  // Forward sweep and back substitution per right-hand side; the bases are
+  // independent, so one thread each handles a basis column.
+  if (threadIdx.x < num_basis) {
+    int ib = threadIdx.x;
+    double* c = c_inout + cfg_c + (size_t)(mn * num_basis + ib) * ns_total;
+    c[j0] /= d_in[r0 + j0];
+    for (int j = j0 + 1; j < jMax; ++j) {
+      const double denominator = d_in[r0 + j] - s_aloc[j - 1] * b_in[r0 + j];
+      c[j] = (c[j] - c[j - 1] * b_in[r0 + j]) / denominator;
+    }
+    for (int j = jMax - 2; j > j0 - 1; --j) {
+      c[j] -= s_aloc[j] * c[j + 1];
     }
   }
 }

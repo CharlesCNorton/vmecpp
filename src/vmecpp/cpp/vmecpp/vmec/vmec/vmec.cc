@@ -278,11 +278,10 @@ absl::StatusOr<bool> Vmec::run(const VmecCheckpoint& checkpoint,
         "axisymmetric (ntor = 0) runs are not supported by the CUDA build; "
         "rebuild without VMECPP_USE_CUDA for axisymmetric inputs");
   }
-  if (s_.nThetaReduced > 32) {
+  if (s_.nThetaReduced > 256) {
     return absl::UnimplementedError(
-        absl::StrFormat("the CUDA build supports nThetaReduced up to 32 "
-                        "(one warp lane per poloidal point in the scatter "
-                        "kernels); this input has nThetaReduced = %d",
+        absl::StrFormat("the CUDA build supports nThetaReduced up to 256; this "
+                        "input has nThetaReduced = %d",
                         s_.nThetaReduced));
   }
   // The reset re-reads VMECPP_N_CONFIG_MAX for this run; it must precede
@@ -301,12 +300,13 @@ absl::StatusOr<bool> Vmec::run(const VmecCheckpoint& checkpoint,
   }
   {
     const int ns_max = indata_.ns_array.maxCoeff();
-    if (ns_max > 1024) {
-      return absl::UnimplementedError(
-          absl::StrFormat("the CUDA build supports radial resolutions up to "
-                          "ns = 1024 (one thread per radial row in the "
-                          "tridiagonal solver); this input requests ns = %d",
-                          ns_max));
+    const int ns_supported = vmecpp::CudaMaxRadialResolution();
+    if (ns_max > ns_supported) {
+      return absl::UnimplementedError(absl::StrFormat(
+          "the CUDA build supports radial resolutions up to ns = %d on this "
+          "device (the large-ns tridiagonal solver holds its elimination "
+          "ratios in shared memory); this input requests ns = %d",
+          ns_supported, ns_max));
     }
     // Pre-flight the device memory budget for the finest multigrid stage
     // at the requested configuration count, so an oversized batch is

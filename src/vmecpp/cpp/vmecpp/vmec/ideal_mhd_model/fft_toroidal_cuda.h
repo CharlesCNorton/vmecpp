@@ -434,6 +434,13 @@ void ResidualsCudaPerCfgD2H(std::vector<double>* fResR_per_cfg,
 // inside CudaForward is populated only on the first kernel invocation.
 int GetNConfigMaxCuda();
 
+// Largest ns the CUDA radial tridiagonal solver supports on the active device.
+// ns <= 1024 uses PCR; larger ns uses block-Thomas with the elimination ratios
+// in dynamic shared memory, so the device's opt-in shared-memory capacity sets
+// the ceiling (sizeof(double) per radial row). Returns 1024 if the device
+// query fails.
+int CudaMaxRadialResolution();
+
 // Upper estimate of the persistent device allocation for one run at the
 // given shape and configuration count, compared against the device's
 // free memory. Returns true when the run fits (or when the device cannot
