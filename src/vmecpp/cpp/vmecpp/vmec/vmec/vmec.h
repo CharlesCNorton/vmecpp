@@ -220,6 +220,19 @@ class Vmec {
   std::vector<Eigen::VectorXd> fb_matrix_per_cfg_;
   std::vector<Eigen::VectorXi> fb_ipiv_per_cfg_;
   std::vector<Eigen::VectorXd> fb_bvec_per_cfg_;
+
+  // Asynchronous NESTOR (VMECPP_FB_ASYNC_NESTOR, single configuration): a
+  // thread-private vacuum solver with its own response matrix, right-hand
+  // side, pivots, and field/pressure output buffers, run by the worker thread
+  // inside IdealMhdModel while the device iterates.
+  std::unique_ptr<FreeBoundaryBase> fb_async_;
+  Eigen::VectorXd fb_async_matrix_;
+  Eigen::VectorXi fb_async_ipiv_;
+  Eigen::VectorXd fb_async_bvec_;
+  Eigen::VectorXd fb_async_bsqvac_;
+  Eigen::VectorXd fb_async_br_;
+  Eigen::VectorXd fb_async_bphi_;
+  Eigen::VectorXd fb_async_bz_;
 #endif
 
  private:
