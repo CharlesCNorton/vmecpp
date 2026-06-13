@@ -778,6 +778,40 @@ bool Vmec::InitializeRadial(
                                     h_.vacuum_b_z.size()));
             }
           }
+
+          // Asynchronous NESTOR (single configuration): a thread-private
+          // Nestor with its own response matrix, right-hand side, pivots, and
+          // field/pressure output buffers, so the worker thread can run it
+          // concurrently with the device iteration without racing the shared
+          // HandoverStorage. Persists across multigrid stages like fb_.
+          const char* async_env = std::getenv("VMECPP_FB_ASYNC_NESTOR");
+          if (n_cfg_fb == 1 && async_env != nullptr &&
+              std::atoi(async_env) > 0 &&
+              indata_.free_boundary_method == FreeBoundaryMethod::NESTOR) {
+            const int nf = s_.ntor;
+            const int mf = s_.mpol + 1;
+            const int mnpd = (2 * nf + 1) * (mf + 1);
+            fb_async_matrix_.setZero(mnpd * mnpd);
+            fb_async_ipiv_.setZero(mnpd);
+            fb_async_bvec_.setZero(mnpd);
+            fb_async_bsqvac_.setZero(h_.vacuum_magnetic_pressure.size());
+            fb_async_br_.setZero(h_.vacuum_b_r.size());
+            fb_async_bphi_.setZero(h_.vacuum_b_phi.size());
+            fb_async_bz_.setZero(h_.vacuum_b_z.size());
+            fb_async_ = std::make_unique<Nestor>(
+                &s_, tp_[thread_id].get(), &mgrid_,
+                std::span<double>(fb_async_matrix_.data(),
+                                  fb_async_matrix_.size()),
+                std::span<double>(fb_async_bvec_.data(),
+                                  fb_async_bvec_.size()),
+                std::span<double>(fb_async_bsqvac_.data(),
+                                  fb_async_bsqvac_.size()),
+                std::span<int>(fb_async_ipiv_.data(), fb_async_ipiv_.size()),
+                std::span<double>(fb_async_br_.data(), fb_async_br_.size()),
+                std::span<double>(fb_async_bphi_.data(),
+                                  fb_async_bphi_.size()),
+                std::span<double>(fb_async_bz_.data(), fb_async_bz_.size()));
+          }
 #endif
         }  // !reuse_solver
       }  // lfreeb
@@ -796,6 +830,12 @@ bool Vmec::InitializeRadial(
           fb_ptrs.push_back(fb.get());
         }
         m_[thread_id]->SetPerCfgFreeBoundary(std::move(fb_ptrs));
+      }
+      if (fb_async_) {
+        m_[thread_id]->SetAsyncFreeBoundary(
+            fb_async_.get(),
+            std::span<const double>(fb_async_bsqvac_.data(),
+                                    fb_async_bsqvac_.size()));
       }
 #endif
     }  // thread_id

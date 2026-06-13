@@ -7,6 +7,7 @@
 
 #include <Eigen/Dense>
 #include <climits>
+#include <memory>
 #include <span>
 
 #ifdef _OPENMP
@@ -24,6 +25,7 @@
 #include "vmecpp/vmec/fourier_geometry/fourier_geometry.h"
 #include "vmecpp/vmec/handover_storage/handover_storage.h"
 #include "vmecpp/vmec/ideal_mhd_model/dft_toroidal.h"
+#include "vmecpp/vmec/ideal_mhd_model/nestor_async.h"
 #ifdef VMECPP_USE_FFTX
 #include "vmecpp/vmec/ideal_mhd_model/fft_toroidal.h"
 #endif
@@ -62,6 +64,19 @@ class IdealMhdModel {
   void SetPerCfgFreeBoundary(std::vector<FreeBoundaryBase*> fbs) {
     fb_per_cfg_ = std::move(fbs);
   }
+
+  // Asynchronous NESTOR (VMECPP_FB_ASYNC_NESTOR): a thread-private vacuum
+  // solver plus its private vacuum_magnetic_pressure output. When present and
+  // the vacuum contribution is fully active, the single-configuration vacuum
+  // block runs the solve on a background thread and applies the previous
+  // iteration's edge force (see nestor_async.h). fb_async is owned by Vmec.
+  void SetAsyncFreeBoundary(FreeBoundaryBase* fb_async,
+                            std::span<const double> bsqvac);
+  // Fills the async worker's input buffer from the current handover and
+  // profile state (LCFS spectrum, axis, toroidal current, edge pressure, LCFS
+  // radius) and submits the next solve. Used by the steady-state async branch
+  // and to prime the worker at the first fully-active iteration.
+  void SnapshotAndSubmitAsyncNestor();
 #endif
 
   // Compute the invariant (i.e., not preconditioned yet) force residuals.
@@ -429,6 +444,11 @@ class IdealMhdModel {
   VacuumPressureState& m_vacuum_pressure_state_;
 #ifdef VMECPP_USE_CUDA
   std::vector<FreeBoundaryBase*> fb_per_cfg_;
+  // Asynchronous NESTOR worker (VMECPP_FB_ASYNC_NESTOR); null unless the env
+  // gate, single-configuration, and NESTOR free boundary all hold. Primed the
+  // first fully-active vacuum iteration, then drives the steady state.
+  std::unique_ptr<NestorAsyncWorker> nestor_async_worker_;
+  bool nestor_async_primed_ = false;
 #endif
 
 #ifdef VMECPP_USE_FFTX

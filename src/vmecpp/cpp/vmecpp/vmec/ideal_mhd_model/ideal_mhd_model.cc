@@ -956,6 +956,73 @@ absl::StatusOr<bool> IdealMhdModel::update(
       vmecpp::ScaleRZCon0Cuda(0.9);
       const int n_vac_cfg =
           fb_per_cfg_.empty() ? 1 : static_cast<int>(fb_per_cfg_.size());
+
+      // Asynchronous NESTOR (VMECPP_FB_ASYNC_NESTOR): once the vacuum
+      // contribution is fully active in a single-configuration run, the host
+      // solve runs on a worker thread and the device applies the previous
+      // iteration's edge force. The geometry flush and handover stay on the
+      // main thread; only the solve and the rBSq assembly are one iteration
+      // stale, which converges (the K=2 sync-elision case established that a
+      // one-iteration-stale vacuum response converges, K >= 2 partitioning
+      // did not). The soft-start window and the batched path use the inline
+      // solve below.
+      static const int kAsyncNestorEnv = [] {
+        const char* e = std::getenv("VMECPP_FB_ASYNC_NESTOR");
+        return (e != nullptr && std::atoi(e) > 0) ? 1 : 0;
+      }();
+      const bool async_steady =
+          kAsyncNestorEnv && nestor_async_worker_ != nullptr &&
+          n_vac_cfg == 1 &&
+          m_vacuum_pressure_state_ == VacuumPressureState::kActive &&
+          nestor_async_primed_;
+
+      if (async_steady) {
+        vmecpp::FlushVacuumHostDataCuda(0, r_, s_, r1_e, r1_o, z1_e,
+                                        totalPressure, m_p_.presH, m_p_.bucoH,
+                                        m_p_.bvcoH);
+        if (r_.nsMinH == 0) {
+          m_h_.rBtor0 = 1.5 * m_p_.bvcoH[r_.nsMinH - r_.nsMinH] -
+                        0.5 * m_p_.bvcoH[r_.nsMinH + 1 - r_.nsMinH];
+        }
+        if (r_.nsMaxH == m_fc_.ns - 1) {
+          m_h_.rBtor = 1.5 * m_p_.bvcoH[r_.nsMaxH - 1 - r_.nsMinH] -
+                       0.5 * m_p_.bvcoH[r_.nsMaxH - 2 - r_.nsMinH];
+          m_h_.cTor = (1.5 * m_p_.bucoH[r_.nsMaxH - 1 - r_.nsMinH] -
+                       0.5 * m_p_.bucoH[r_.nsMaxH - 2 - r_.nsMinH]) *
+                      signOfJacobian * 2.0 * M_PI;
+        }
+        if (r_.nsMaxF1 == m_fc_.ns) {
+          HandOverBoundaryGeometry(m_h_, m_physical_x, s_,
+                                   (r_.nsMaxF1 - 1 - r_.nsMinF1) * s_.mnsize);
+        }
+        if (r_.nsMinF == 0) {
+          HandOverMagneticAxis(m_h_, r1_e, z1_e, s_);
+        }
+
+        // Apply the previous iteration's solved edge force.
+        const NestorAsyncWorker::Outputs& prev =
+            nestor_async_worker_->CollectPrevious();
+        if (m_h_.rBtor * prev.bSubVVac < 0.0) {
+          return absl::InternalError(
+              "IdealMHDModel::update: rbtor and bsubvvac must have the same "
+              "sign - maybe flip the sign of phiedge or the sign of the coil "
+              "currents");
+        } else if (fabs((m_h_.cTor - prev.bSubUVac) / m_h_.rBtor) > 0.01) {
+          return absl::InternalError(
+              "IdealMHDModel::update: VAC-VMEC I_TOR MISMATCH : BOUNDARY MAY "
+              "ENCLOSE EXT. COIL");
+        }
+        if (r_.nsMaxF1 == m_fc_.ns) {
+          for (int kl = 0; kl < s_.nZnT; ++kl) {
+            rBSq[kl] = prev.rBSq[kl];
+            delBSq[kl] = 0.0;
+          }
+          vmecpp::StageRbsqCuda(0, rBSq);
+          // Hand this iteration's geometry to the worker for the next solve.
+          SnapshotAndSubmitAsyncNestor();
+        }
+        m_need_restart = false;
+      } else {
       for (int vac_cfg = 0; vac_cfg < n_vac_cfg; ++vac_cfg) {
         FreeBoundaryBase* fb_cfg =
             fb_per_cfg_.empty() ? m_fb_ : fb_per_cfg_[vac_cfg];
@@ -1105,6 +1172,18 @@ absl::StatusOr<bool> IdealMhdModel::update(
       } else {
         m_need_restart = false;
       }
+
+      // Prime the asynchronous worker at the first fully-active iteration:
+      // this iteration was solved inline above, so snapshot it and submit so
+      // the next iteration has a result to collect.
+      if (kAsyncNestorEnv && nestor_async_worker_ != nullptr &&
+          n_vac_cfg == 1 &&
+          m_vacuum_pressure_state_ == VacuumPressureState::kActive &&
+          !nestor_async_primed_ && r_.nsMaxF1 == m_fc_.ns) {
+        SnapshotAndSubmitAsyncNestor();
+        nestor_async_primed_ = true;
+      }
+      }  // async_steady ? ... : inline vacuum solve
 #else
       for (int jF = r_.nsMinF; jF < r_.nsMaxF; ++jF) {
         for (int kl = 0; kl < s_.nZnT; ++kl) {
@@ -4101,5 +4180,47 @@ void IdealMhdModel::FlushForOutputCuda() {
       m_p_.iotaH.data(), m_p_.chipF.data(), m_p_.iotaF.data());
 #endif
 }
+
+#ifdef VMECPP_USE_CUDA
+void IdealMhdModel::SetAsyncFreeBoundary(FreeBoundaryBase* fb_async,
+                                         std::span<const double> bsqvac) {
+  nestor_async_worker_ = std::make_unique<NestorAsyncWorker>(
+      fb_async, bsqvac, s_.nZnT, s_.nZeta, s_.nThetaEff);
+  nestor_async_primed_ = false;
+}
+
+void IdealMhdModel::SnapshotAndSubmitAsyncNestor() {
+  NestorAsyncWorker::Inputs& in = nestor_async_worker_->input_buffer();
+  const auto cp = [](std::vector<double>& dst, const Eigen::VectorXd& src) {
+    dst.assign(src.data(), src.data() + src.size());
+  };
+  cp(in.rCC, m_h_.rCC_LCFS);
+  cp(in.rSS, m_h_.rSS_LCFS);
+  cp(in.rSC, m_h_.rSC_LCFS);
+  cp(in.rCS, m_h_.rCS_LCFS);
+  cp(in.zSC, m_h_.zSC_LCFS);
+  cp(in.zCS, m_h_.zCS_LCFS);
+  cp(in.zCC, m_h_.zCC_LCFS);
+  cp(in.zSS, m_h_.zSS_LCFS);
+  cp(in.rAxis, m_h_.rAxis);
+  cp(in.zAxis, m_h_.zAxis);
+  in.signOfJacobian = signOfJacobian;
+  in.netToroidalCurrent = m_h_.cTor / MU_0;
+  in.ivacskip = ivacskip;
+  in.deltaS = m_fc_.deltaS;
+  double edgePressure =
+      m_p_.evalMassProfile((m_fc_.ns - 1.5) / (m_fc_.ns - 1.0));
+  if (edgePressure != 0.0) {
+    edgePressure = m_p_.evalMassProfile(1.0) / edgePressure *
+                   m_p_.presH[r_.nsMaxH - 1 - r_.nsMinH];
+  }
+  in.edgePressure = edgePressure;
+  for (int kl = 0; kl < s_.nZnT; ++kl) {
+    const int idx_kl = (r_.nsMaxF1 - 1 - r_.nsMinF1) * s_.nZnT + kl;
+    in.r1_lcfs[kl] = r1_e[idx_kl] + r1_o[idx_kl];
+  }
+  nestor_async_worker_->Submit();
+}
+#endif
 
 }  // namespace vmecpp
