@@ -164,7 +164,11 @@ device-resident state:
 
 - The device backup of the six spectral position components is armed at
   the start of every multigrid stage and refreshed at the host backup
-  cadence on subsequent iterations.
+  cadence on subsequent iterations. The refresh is one fused copy kernel
+  (`k_backup_pts_x`) on the iteration stream; under `VMECPP_KERNEL_TIMING`
+  it measures 0.0048 ms per call and under 1% of iteration time on
+  production-scale inputs (W7-X, sm_89), so the rollback target stays
+  current at every improving iteration without a meaningful cost.
 - A restore replays the backup into the position buffers and zeroes the
   integrator velocity, mirroring the host `decomposed_v.setZero()`. In
   batched mode the restore is gated per configuration by the restart
@@ -258,7 +262,7 @@ kernels in `fft_toroidal_cuda_kernels.cu`.
 | `VMECPP_SCATTER_CUSTOM_GEMM` | Tile-cooperative GEMM with per-multiply Veltkamp-Dekker and DD accumulation. |
 | `VMECPP_SCATTER_CUSTOM_GEMM_WMMA` | TF32 tensor-core dispatch: 3-slice Ozaki limbs, 54 `wmma::mma_sync` per tile. The wmma-only sum reaches rel ~3e-6; production precision comes from the scalar Veltkamp-Dekker pass over the same shared-memory data. The tile geometry covers `mpol <= 12` and `nThetaReduced <= 16`; larger inputs fall back to the production scatter with a one-time notice. |
 | `VMECPP_SCATTER_I8OZAKI` | int8 tensor-core scatter via the Ozaki construction: eight 7-bit limbs per FP64 operand, exact s32 accumulation, no scalar recovery pass. Converges within a few ULP of FP64. Same tile coverage as the wmma path. |
-| `VMECPP_SCATTER_I8GEMM` | Batched int8-Ozaki GEMM: (config, surface, zeta) fold into one GEMM row axis, the basis-side limb matrix builds once per shape, and only the spec rows slice per iteration. No tile shape limits. Converges within a few ULP of FP64. At the scatter's K (at most 16 mpol) the eight limb planes carry as many bytes as the FP64 operands, so the kernel stays memory-bound and the production scatter remains faster at saturated shapes. |
+| `VMECPP_SCATTER_I8GEMM` | Batched int8-Ozaki GEMM: (config, surface, zeta) fold into one GEMM row axis, the basis-side limb matrix builds once per shape, and only the spec rows slice per iteration. No tile shape limits. Converges within a few ULP of FP64. At the scatter's K (at most 16 mpol) the eight limb planes carry as many bytes as the FP64 operands, so the kernel stays memory-bound and the production scatter remains faster at saturated shapes. Measured on sm_89 (RTX 6000 Ada): the int8 scatter runs at 0.084 ms per call against the production scatter's 0.013 ms (6.5x), and the higher int8-tensor throughput of the larger part does not help a bandwidth-bound kernel; the run still converges to the canonical result. |
 | `VMECPP_SCATTER_TF32_PLAIN` | Plain TF32 accumulator sum, rel ~3e-6. |
 | `VMECPP_SCATTER_I8_LIMBS` | Limb width for the int8 scatter paths: `4` selects 28-bit operands (rel ~4e-9) at half the limb-plane traffic and half the mma work; the default `8` covers the FP64 mantissa. Pure 4-limb runs stall above the convergence tolerance. Under `VMECPP_IR_STAGED` the residual phase routes the width per iteration: 4 above the threshold with a decade hysteresis band, 8 below; a width change drops the whole-iteration graph. The 4-limb descent inflates iteration counts past its bandwidth saving, so the staged mode trails the pure 8-limb path, and inputs that recover from mid-run bad Jacobians do not converge under it. |
 | `VMECPP_RESIDUALS_DD_FP32` | DD-pair FP32 accumulator in the residual reduction. |

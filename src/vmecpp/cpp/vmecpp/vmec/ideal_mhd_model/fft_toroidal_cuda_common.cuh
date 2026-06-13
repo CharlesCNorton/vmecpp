@@ -469,7 +469,7 @@ struct CudaToroidalState {
   // Each slot: 2 events (start/stop) + accumulated ms + call count. Recorded
   // around the major per-iter kernels; dumped to stderr at program exit
   // via atexit. Slow when enabled (per-call sync); diagnostic only.
-  static constexpr int kNumTimedKernels = 18;
+  static constexpr int kNumTimedKernels = 19;
   enum TimedKernel {
     TK_CUFFT_INV = 0,        // cufftExecZ2D
     TK_SCATTER = 1,          // k_scatter_main_and_con_v4
@@ -489,6 +489,7 @@ struct CudaToroidalState {
     TK_ASSEMBLE_TOTAL = 15,  // k_assemble_total_forces
     TK_PCONDITION_MAT = 16,  // ComputePreconditioningMatrix (every 25 iters)
     TK_ASSEMBLE_RZ = 17,     // k_assemble_rz_preconditioner
+    TK_BACKUP_PTS = 18,      // k_backup_pts_x (state backup at store cadence)
   };
   cudaEvent_t tk_start[kNumTimedKernels] = {};
   cudaEvent_t tk_stop[kNumTimedKernels] = {};
@@ -550,6 +551,7 @@ struct CudaToroidalState {
       "k_effective_constraint_force", "k_dealias_inv",
       "k_compute_mhd_forces", "k_assemble_total_forces",
       "ComputePreconditioningMatrix", "k_assemble_rz_preconditioner",
+      "k_backup_pts_x",
     };
     double total = 0.0;
     for (int i = 0; i < kNumTimedKernels; ++i) total += tk_total_ms[i];

@@ -575,12 +575,14 @@ void BackupPtsXCuda() {
   const int total =
       static_cast<int>((size_t)S.n_config_max * (size_t)S.pts_x_size);
   const int TPB = 256;
+  S.TKBegin(CudaToroidalState::TK_BACKUP_PTS);
   k_backup_pts_x<<<(total + TPB - 1) / TPB, TPB, 0, S.stream>>>(
       total,
       S.d_pts_x_rcc, S.d_pts_x_rss, S.d_pts_x_zsc,
       S.d_pts_x_zcs, S.d_pts_x_lsc, S.d_pts_x_lcs,
       S.d_pts_x_backup_rcc, S.d_pts_x_backup_rss, S.d_pts_x_backup_zsc,
       S.d_pts_x_backup_zcs, S.d_pts_x_backup_lsc, S.d_pts_x_backup_lcs);
+  S.TKEnd(CudaToroidalState::TK_BACKUP_PTS);
   cuda_check(cudaGetLastError(), "k_backup_pts_x launch");
 }
 
