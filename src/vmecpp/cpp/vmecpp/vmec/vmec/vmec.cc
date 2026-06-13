@@ -208,6 +208,15 @@ absl::StatusOr<std::unique_ptr<Vmec>> Vmec::FromIndata(
   return v;
 }
 
+// The asynchronous NESTOR workers (owned by the IdealMhdModel instances in m_)
+// solve the vacuum field on a background thread that writes into fb_async_ and
+// its response buffers, all of which are members of this Vmec. Destroy the
+// models first, so each worker is joined and its final in-flight solve has
+// completed, while fb_async_ is still alive. The implicit member teardown would
+// otherwise free fb_async_ before m_ (m_ is declared earlier), leaving a worker
+// writing into freed memory.
+Vmec::~Vmec() { m_.clear(); }
+
 // initialize based on input file contents
 Vmec::Vmec(const VmecINDATA& indata, std::optional<int> max_threads,
            OutputMode verbose, InterruptCallback interrupt_callback)

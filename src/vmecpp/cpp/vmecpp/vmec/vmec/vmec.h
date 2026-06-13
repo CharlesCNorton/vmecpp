@@ -91,6 +91,10 @@ class Vmec {
   Vmec(Vmec&&) = delete;
   Vmec& operator=(Vmec&&) = delete;
 
+  // Tears down the IdealMhdModel instances (joining the asynchronous NESTOR
+  // workers) before this Vmec's vacuum buffers are destroyed. See vmec.cc.
+  ~Vmec();
+
   // sign of Jacobian between cylindrical and flux coordinates
   // This is called `signgs` in Fortran VMEC.
   static constexpr int kSignOfJacobian = -1;
