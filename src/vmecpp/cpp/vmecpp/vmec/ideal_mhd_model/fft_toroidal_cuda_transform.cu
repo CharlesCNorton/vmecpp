@@ -1399,55 +1399,6 @@ void FourierToReal3DSymmFastPoloidalCuda(
       cuda_check(cudaGetLastError(), "k_scatter_main_and_con_v4 launch");
     }
     S.TKEnd(CudaToroidalState::TK_SCATTER);
-    if (false) {
-      k_scatter_main_and_con<<<scat_blocks, scat_tpb, 0, st>>>(
-          S.n_config_max, ns_local, mpol, nZeta, nThetaReduced, nThetaEff,
-          S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
-          S.d_xmpq, S.d_sqrtSF,
-          S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
-          S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
-          S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
-          S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o,
-          S.d_rCon, S.d_zCon);
-      cuda_check(cudaGetLastError(), "k_scatter_main_and_con (v1) launch");
-    }
-    if (false) {
-      // Disabled scaffold: the v3 variant packs two k values per
-      // warp, raising the active-lane occupancy of the scatter
-      // kernel. The fp64 pipeline issues instructions on every
-      // cycle regardless of active-lane count, so the doubled
-      // per-warp memory pressure incurred by packing two k values
-      // is not offset by additional arithmetic throughput; the
-      // variant is retained for diagnostic comparison only.
-      dim3 v3_blocks(1, (nZeta + 1) / 2, ns_local * S.n_config_max);
-      dim3 v3_tpb(32, 1, 1);
-      k_scatter_main_and_con_v3<<<v3_blocks, v3_tpb, 0, st>>>(
-          S.n_config_max, ns_local, mpol, nZeta, nThetaReduced, nThetaEff,
-          S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
-          S.d_xmpq, S.d_sqrtSF,
-          S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
-          S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
-          S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
-          S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o,
-          S.d_rCon, S.d_zCon);
-      cuda_check(cudaGetLastError(), "k_scatter_main_and_con_v3 launch");
-    }
-    if (false) {
-      constexpr int JBLOCK = 4;
-      int z_total = ns_local * S.n_config_max;
-      dim3 scat_v2_blocks(1, nZeta, (z_total + JBLOCK - 1) / JBLOCK);
-      dim3 scat_v2_tpb(32, JBLOCK, 1);
-      k_scatter_main_and_con_v2<<<scat_v2_blocks, scat_v2_tpb, 0, st>>>(
-          S.n_config_max, ns_local, mpol, nZeta, nThetaReduced, nThetaEff,
-          S.d_Y, S.d_cosmu, S.d_sinmu, S.d_cosmum, S.d_sinmum,
-          S.d_xmpq, S.d_sqrtSF,
-          S.d_r1_e, S.d_r1_o, S.d_ru_e, S.d_ru_o,
-          S.d_rv_e, S.d_rv_o, S.d_z1_e, S.d_z1_o,
-          S.d_zu_e, S.d_zu_o, S.d_zv_e, S.d_zv_o,
-          S.d_lu_e, S.d_lu_o, S.d_lv_e, S.d_lv_o,
-          S.d_rCon, S.d_zCon);
-      cuda_check(cudaGetLastError(), "k_scatter_main_and_con_v2 launch");
-    }
   } else {
     k_scatter_main<<<scat_blocks, scat_tpb, 0, st>>>(
         S.n_config_max, ns_local, mpol, nZeta, nThetaReduced, nThetaEff,
