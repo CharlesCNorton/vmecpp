@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1781882955793,
+  "lastUpdate": 1782320239662,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18266,6 +18266,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.003938319165766704",
             "extra": "mean: 9.34648288533333 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "albert@tugraz.at",
+            "name": "Christopher Albert",
+            "username": "krystophny"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e7c3d039e5571c3e8f3a2f17207cfa8f5903e84",
+          "message": "enzyme: opt-in Clang/Enzyme build option + AD smoke test (#565)\n\n* build: bump CMake abseil pin to 20260107.1 for Clang >= 21\n\nThe CMake FetchContent abseil pin (2024-08) fails to compile under\nClang >= 21: absl::Nonnull SFINAE in absl/strings/ascii.cc and the\nnumbers.cc nullability annotations are rejected by the newer frontend.\nBump to the 20260107.1 LTS, which compiles cleanly under Clang 21.1.8\nand GCC. Clang is the compiler required for the Enzyme autodiff build.\n\nThe Bazel build keeps its own (BCR) abseil pin and is unaffected.\n\n* enzyme: opt-in Clang/Enzyme build option and AD smoke test\n\nAdd VMECPP_ENABLE_ENZYME (OFF by default), which requires a Clang\ncompiler and a ClangEnzyme plugin path and builds a self-contained\nautodiff smoke test. The test differentiates a scalar objective written\nover Eigen::Map'd caller buffers and checks reverse- and forward-mode\nEnzyme gradients against the closed form and central finite differences.\n\nenzyme.h documents the intrinsic ABI and the allocation constraint that\nshapes the differentiable kernels: Enzyme cannot track Eigen's aligned\nallocator, so differentiable paths use Eigen::Map over caller-owned\nbuffers and avoid heap expression temporaries.\n\nWith the option off the build is unchanged.\n\n* ci: skip benchmark result upload on fork PRs (token is read-only)\n\nThe 'Compare benchmark result' step uses github-action-benchmark with\ncomment-on-alert and the GITHUB_TOKEN, which is read-only for pull requests from\nforks -> 'Resource not accessible by integration'. Gate that step on the PR\ncoming from the same repo so fork PRs still run the benchmarks but skip the\nwrite-back instead of failing.\n\n* ci: build VMEC2000 from source so the compat test runs on numpy 2\n\nThe pinned vmec-0.0.6 cp310 wheel was f90wrapped against numpy 1.x. Under\nthe numpy 2.x that the test env now resolves, importing it dies in the\nf90wrap array interface (f90wrap_vmec_input__array__rbc: 0-th dimension\nmust be fixed to 2 but got 4), so test_ensure_vmec2000_input_from_vmecpp_input\ncould never actually run on CI (and is currently red on main too, where the\nwheel's runtime libs are not even installed).\n\nBuild VMEC2000 from upstream source with current f90wrap, which produces\nnumpy-2-compatible bindings. The recipe mirrors SIMSOPT's own CI\n(hiddenSymmetries/VMEC2000, cmake/machines/ubuntu.json). An explicit\n'import vmec' check in the install step surfaces any remaining problem here\nrather than as a confusing test failure.\n\n* test: skip vmecpp-only indata fields in the VMEC2000 compat subset\n\nWith VMEC2000 built from current upstream source, the compatibility test\nruns for the first time and hits vmecpp indata fields that have no\ncounterpart in the legacy VMEC2000 INDATA namelist (e.g.\nfree_boundary_method), which raised AttributeError. The test explicitly\nchecks only the common subset, so guard the lookup with hasattr and skip\nfields VMEC2000 does not have, instead of enumerating them one by one.\n\n* ci: sync VMEC2000-from-source build, benchmark fork guard, abseil commit pin\n\nBring this stack branch up to the corrected CI baseline (from #583/#564):\n- tests.yaml: build VMEC2000 from the pinned source commit and cache the\n  wheel; drop the unused FFTW/HDF5 dev packages.\n- benchmarks.yaml: skip the result upload on fork PRs (read-only token).\n- test_simsopt_compat.py: skip vmecpp-only INDATA fields.\n- CMakeLists: pin abseil to the 20260107.1 commit hash, not the tag.\n\n* enzyme: run the AD smoke test through bazel instead of ctest\n\nMove the Enzyme autodiff smoke test into the bazel test framework, which\nowns every other C++ test in this repository, and drop the separate CMake\nctest path that nothing in CI exercised.\n\n- vmecpp/common/enzyme/BUILD.bazel: an `enzyme` header library plus an\n  `enzyme_smoke_test` cc_test. The test is tagged `manual` so the default\n  GCC `bazel test //...` skips it (the Enzyme intrinsics only resolve under\n  Clang with the plugin attached) and never tries to compile it with GCC.\n- .bazelrc: a `--config=enzyme` that sets -O2 so the Enzyme optimization\n  pass fires. Select Clang with CC/CXX and pass the plugin path the way\n  -DVMECPP_ENZYME_PLUGIN did under CMake:\n    CC=clang CXX=clang++ bazel test --config=enzyme \\\n      --copt=-fplugin=/path/to/ClangEnzyme-NN.so \\\n      //vmecpp/common/enzyme:enzyme_smoke_test\n- CMakeLists.txt: remove the VMECPP_ENABLE_ENZYME option and the ctest\n  registration it only existed to drive.\n\n* ci: build ClangEnzyme and run the enzyme smoke test in CI\n\nAdd a GitHub Actions job that gives the Enzyme autodiff smoke test actual CI\ncoverage. It mirrors the EnzymeAD upstream recipe: install Clang/LLVM 21 from\napt.llvm.org, build a pinned ClangEnzyme-21 plugin (v0.0.264, the version this\nstack is developed against) against the installed LLVM and Clang, then run the\nbazel target under --config=enzyme with the plugin attached. The plugin build\nis cached on the pinned ref so only the first run pays for it.\n\nThis is what the enzyme test needed beyond the bazel move: the default GCC\ntest_bazel job skips the manual-tagged target, so without a Clang/Enzyme job\nnothing exercised it.\n\n---------\n\nCo-authored-by: Philipp Jurašić <166746189+jurasic-pf@users.noreply.github.com>",
+          "timestamp": "2026-06-24T08:42:22+02:00",
+          "tree_id": "813c275e8dbd0aa8c2f0bc854d6e614292584fab",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/2e7c3d039e5571c3e8f3a2f17207cfa8f5903e84"
+        },
+        "date": 1782320238529,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 2.6823683238077884,
+            "unit": "iter/sec",
+            "range": "stddev: 0.003277927448495287",
+            "extra": "mean: 372.8048795999939 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 2.678085913594053,
+            "unit": "iter/sec",
+            "range": "stddev: 0.002960170963660245",
+            "extra": "mean: 373.40101559997265 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 0.27175395956097154,
+            "unit": "iter/sec",
+            "range": "stddev: 0.007912686571428722",
+            "extra": "mean: 3.6797991889999935 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 0.5901005885404265,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0025086087006782496",
+            "extra": "mean: 1.694626338999986 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 0.5688829931911863,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005050413925200581",
+            "extra": "mean: 1.757830717333339 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 0.48152008850190786,
+            "unit": "iter/sec",
+            "range": "stddev: 0.014636220551847977",
+            "extra": "mean: 2.0767565546666447 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 0.1082032684727156,
+            "unit": "iter/sec",
+            "range": "stddev: 0.023109419204666058",
+            "extra": "mean: 9.241865001999997 sec\nrounds: 3"
           }
         ]
       }
