@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1782320239662,
+  "lastUpdate": 1782477310854,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18339,6 +18339,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.023109419204666058",
             "extra": "mean: 9.241865001999997 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "166746189+jurasic-pf@users.noreply.github.com",
+            "name": "Philipp Jurašić",
+            "username": "jurasic-pf"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "776d247ba8021d6be42573c4660bd973f346c13a",
+          "message": "Migrate large cpp tests to the main repository (#596)\n\nMigrate `vmecpp_large_cpp_tests/` into `vmecpp/` to make development easier, and have all the tests in one place.\n\nThe original split made the `vmecpp/` repository lighter weight, to facilitate installing from source, but this no longer seems to be a relevant usecase since pip wheels are available and no noteworthy performance differences have been reported so far between native builds vs pre built wheels.",
+          "timestamp": "2026-06-25T14:27:28Z",
+          "tree_id": "cdbb8a7eda60cd8ae4970b3f1f88bcdea908d11e",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/776d247ba8021d6be42573c4660bd973f346c13a"
+        },
+        "date": 1782477309621,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 2.7423598784812055,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001599137414439479",
+            "extra": "mean: 364.64944220006146 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 2.7288098713306543,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0020156348560424753",
+            "extra": "mean: 366.4601226000286 msec\nrounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 0.2742192955517849,
+            "unit": "iter/sec",
+            "range": "stddev: 0.017989167755314107",
+            "extra": "mean: 3.646716391666738 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 0.5917638863293035,
+            "unit": "iter/sec",
+            "range": "stddev: 0.005284525583885281",
+            "extra": "mean: 1.6898631753332818 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 0.5675173091549535,
+            "unit": "iter/sec",
+            "range": "stddev: 0.013740872631353962",
+            "extra": "mean: 1.7620607933333758 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 0.4818619800700134,
+            "unit": "iter/sec",
+            "range": "stddev: 0.011375627128663458",
+            "extra": "mean: 2.0752830506667124 sec\nrounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 0.10850801116123887,
+            "unit": "iter/sec",
+            "range": "stddev: 0.008473870110023603",
+            "extra": "mean: 9.215909399666694 sec\nrounds: 3"
           }
         ]
       }
