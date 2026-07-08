@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783519951203,
+  "lastUpdate": 1783547293753,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18558,6 +18558,79 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.02800660216578361",
             "extra": "mean: 9.323734903333351 sec\nrounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "166746189+jurasic-pf@users.noreply.github.com",
+            "name": "Philipp Jurašić",
+            "username": "jurasic-pf"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "cd3dfc2d6facd85e77f076120b479ad1c92a5dbc",
+          "message": "Clean up benchmark on demandplots (#615)",
+          "timestamp": "2026-07-08T23:12:19+02:00",
+          "tree_id": "ab8b5c4ded4e43c9df5c47f8b23e03b29fe692e2",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/cd3dfc2d6facd85e77f076120b479ad1c92a5dbc"
+        },
+        "date": 1783547292097,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.37182725279998297,
+            "range": "stddev: 0.0015026751591603403",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.36718426299997875,
+            "range": "stddev: 0.001315011688047067",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 3.7794321016666763,
+            "range": "stddev: 0.009589257321784258",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.6441722889999824,
+            "range": "stddev: 0.006802645296971169",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 2.395822489333341,
+            "range": "stddev: 0.013213900520246189",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.053968563333342,
+            "range": "stddev: 0.004230219055023408",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 9.197184393666703,
+            "range": "stddev: 0.003014602778155457",
+            "unit": "seconds",
+            "extra": "rounds: 3"
           }
         ]
       }
