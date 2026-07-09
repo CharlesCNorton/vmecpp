@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783623107535,
+  "lastUpdate": 1783636357103,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18702,6 +18702,79 @@ window.BENCHMARK_DATA = {
             "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
             "value": 9.193121556333324,
             "range": "stddev: 0.038082475954774875",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "albert@tugraz.at",
+            "name": "Christopher Albert",
+            "username": "krystophny"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "4f40e831047088ffa388ab97715af9de8f6b385e",
+          "message": "Restore external optimizer behavioral tests (#623)\n\nRun every solver once on explicit Solov'ev and CTH-like inputs. Keep the strict internal-state comparison on the reproducible 2D case, and verify force balance and energy in 3D without optional diagnostics or repeated evaluations.\n\nCo-authored-by: Philipp Jurašić <166746189+jurasic-pf@users.noreply.github.com>",
+          "timestamp": "2026-07-09T20:28:58Z",
+          "tree_id": "bc07c3d192130f05e2677da9a50505456770a0dc",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/4f40e831047088ffa388ab97715af9de8f6b385e"
+        },
+        "date": 1783636355347,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.38394607980000045,
+            "range": "stddev: 0.00753827362681482",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.3783400449999988,
+            "range": "stddev: 0.0022661295608087987",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 3.3508670456666607,
+            "range": "stddev: 0.009137563150059383",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.2722557986666818,
+            "range": "stddev: 0.0032916654812932874",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 2.0726256563333436,
+            "range": "stddev: 0.02250303465140393",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.0779470813333396,
+            "range": "stddev: 0.02235477875605053",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 8.785461569333316,
+            "range": "stddev: 0.024370637191152424",
             "unit": "seconds",
             "extra": "rounds: 3"
           }
