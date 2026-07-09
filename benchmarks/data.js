@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783547347561,
+  "lastUpdate": 1783623008021,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18629,6 +18629,79 @@ window.BENCHMARK_DATA = {
             "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
             "value": 9.197184393666703,
             "range": "stddev: 0.003014602778155457",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "clazzati@proximafusion.com",
+            "name": "clazzati-pf",
+            "username": "clazzati-pf"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2e4c22dec2a1ca5617ba5d4a9abd6f549bce4abf",
+          "message": "Refactor Fourier-resolution continuation into vmecpp.run() (#619)\n\nmoved vmecpp.run_continuation() logic directly into vmecpp.run()\n\nCo-authored-by: Philipp Jurašić <166746189+jurasic-pf@users.noreply.github.com>",
+          "timestamp": "2026-07-09T16:13:17Z",
+          "tree_id": "e8b1ac6a756a30f91c494555eba7196e56b592b5",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/2e4c22dec2a1ca5617ba5d4a9abd6f549bce4abf"
+        },
+        "date": 1783623006326,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.3758773671999961,
+            "range": "stddev: 0.011494651865841988",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.3711238121999941,
+            "range": "stddev: 0.00480360005528919",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 3.8071275663333304,
+            "range": "stddev: 0.04204736448249949",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.6472091783333365,
+            "range": "stddev: 0.0028155341530649706",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 2.409202812666649,
+            "range": "stddev: 0.03351799106757221",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.073192904666674,
+            "range": "stddev: 0.010463931890247434",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 9.193121556333324,
+            "range": "stddev: 0.038082475954774875",
             "unit": "seconds",
             "extra": "rounds: 3"
           }
