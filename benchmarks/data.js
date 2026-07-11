@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1783636457547,
+  "lastUpdate": 1783764334006,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18775,6 +18775,79 @@ window.BENCHMARK_DATA = {
             "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
             "value": 8.785461569333316,
             "range": "stddev: 0.024370637191152424",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "198982749+Copilot@users.noreply.github.com",
+            "name": "Copilot",
+            "username": "Copilot"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d5dd34dbdb09ddeadf9c76890422cfb11f050fc9",
+          "message": "fix(docs): prevent duplicate github-pages artifacts on reruns; drop wrong `myst` dep (#632)\n\n* Initial plan\n\n* Initial plan\n\nCo-authored-by: jurasic-pf <166746189+jurasic-pf@users.noreply.github.com>\n\n* fix: prevent duplicate github-pages artifacts on job reruns and remove incorrect myst dependency\n\n- docs.yaml: use `github-pages-${{ github.run_attempt }}` as the artifact\n  name in both upload-pages-artifact and deploy-pages steps. When the\n  build-docs job is re-run after a transient failure, the previous\n  attempt's artifact is still present in the same workflow run. The\n  deploy-pages action uses `listArtifacts()` which returns all attempts'\n  artifacts, causing it to find 2 artifacts named \"github-pages\" and\n  throw \"Multiple artifacts named 'github-pages' were unexpectedly\n  found\". Using a per-attempt unique name avoids this conflict.\n\n- pyproject.toml: remove the `myst` package from the docs optional\n  dependencies. The `myst` package (v1.0.4) is a Google authentication\n  library unrelated to Sphinx/MyST markdown. The correct package\n  `myst_parser` is already listed. Having `myst` installed pulls in\n  google-auth, google-auth-oauthlib, and downgrades urllib3 to <2.0,\n  introducing unnecessary dependency conflicts.\n\nCo-authored-by: jurasic-pf <166746189+jurasic-pf@users.noreply.github.com>\n\n---------\n\nCo-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>\nCo-authored-by: jurasic-pf <166746189+jurasic-pf@users.noreply.github.com>",
+          "timestamp": "2026-07-11T01:19:52+02:00",
+          "tree_id": "93ef39e48174d414656a853786b23c60202b72d9",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/d5dd34dbdb09ddeadf9c76890422cfb11f050fc9"
+        },
+        "date": 1783764332145,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.31633310919999075,
+            "range": "stddev: 0.006731186682989379",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.3280686587999867,
+            "range": "stddev: 0.0017539860249299337",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 3.274054769666691,
+            "range": "stddev: 0.034051904914755314",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.2125036636666664,
+            "range": "stddev: 0.001601684892075107",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.9925382783333323,
+            "range": "stddev: 0.031080438946711256",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.7569358956666672,
+            "range": "stddev: 0.03773132496085209",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 7.140371648000003,
+            "range": "stddev: 0.035523793707464",
             "unit": "seconds",
             "extra": "rounds: 3"
           }
