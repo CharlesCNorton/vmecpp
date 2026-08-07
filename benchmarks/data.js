@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1785198932500,
+  "lastUpdate": 1786106284872,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -18994,6 +18994,79 @@ window.BENCHMARK_DATA = {
             "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
             "value": 8.545132201333312,
             "range": "stddev: 0.008397924690810191",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "166746189+jurasic-pf@users.noreply.github.com",
+            "name": "Jonathan Schilling",
+            "username": "jurasic-pf"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d83035b9f57b9c0d9fb17831f071f3373af58437",
+          "message": "Add `gfortran` to list of required packages on Ubuntu - for `indata2json` (#678)",
+          "timestamp": "2026-08-05T15:21:35+02:00",
+          "tree_id": "4615674c15883781fc2b245a50d094a5c69d1030",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/d83035b9f57b9c0d9fb17831f071f3373af58437"
+        },
+        "date": 1786106282808,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.38286581639999895,
+            "range": "stddev: 0.002637243612663111",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.38087282359998653,
+            "range": "stddev: 0.004487203154766918",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 3.131342802333336,
+            "range": "stddev: 0.01755597388485276",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.2719841396666614,
+            "range": "stddev: 0.0010002501299462504",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 2.0552243156666727,
+            "range": "stddev: 0.030396597030015706",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.0752156450000143,
+            "range": "stddev: 0.02414896095669719",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 8.700537683000013,
+            "range": "stddev: 0.061305384614363224",
             "unit": "seconds",
             "extra": "rounds: 3"
           }
