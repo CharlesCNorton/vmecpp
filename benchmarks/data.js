@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1786106647163,
+  "lastUpdate": 1787241784669,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -19069,6 +19069,93 @@ window.BENCHMARK_DATA = {
             "range": "stddev: 0.061305384614363224",
             "unit": "seconds",
             "extra": "rounds: 3"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "198982749+Copilot@users.noreply.github.com",
+            "name": "Copilot",
+            "username": "Copilot"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "5ad1758d77ebafffe05a27c9672186263bfb3a3e",
+          "message": "Fix validation workflow constraint path for nested checkout (#689)\n\n* Initial plan\n\n* Fix validation job constraint path for nested checkout\n\nCo-authored-by: jurasic-pf <166746189+jurasic-pf@users.noreply.github.com>\n\n---------\n\nCo-authored-by: copilot-swe-agent[bot] <198982749+Copilot@users.noreply.github.com>\nCo-authored-by: jurasic-pf <166746189+jurasic-pf@users.noreply.github.com>",
+          "timestamp": "2026-08-19T09:23:42+02:00",
+          "tree_id": "4b2e43d3f9ddf8c22ef6268f5aec3bada165a55f",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/5ad1758d77ebafffe05a27c9672186263bfb3a3e"
+        },
+        "date": 1787241782902,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.285416382599999,
+            "range": "stddev: 0.003749905888908713",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.28686347300000536,
+            "range": "stddev: 0.005122010184410662",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.482075517333328,
+            "range": "stddev: 0.04484575607825865",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.0635831580000097,
+            "range": "stddev: 0.011035571755781341",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.4980454180000227,
+            "range": "stddev: 0.005382168510281659",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.8035427506666413,
+            "range": "stddev: 0.04425175951372982",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 7.206638823333321,
+            "range": "stddev: 0.013668250394291693",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 5.899472491999973,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.303224924999995,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
           }
         ]
       }
