@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787242101682,
+  "lastUpdate": 1787613807914,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -19153,6 +19153,93 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.303224924999995,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "166746189+jurasic-pf@users.noreply.github.com",
+            "name": "Philipp Jurašić",
+            "username": "jurasic-pf"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1d7e09941c89210be95b6b20f4d4d555f0a63096",
+          "message": "Fix VmecWOut.from_wout_file failing to validate wout aliases (#702)\n\nVmecWOut.from_wout_file() builds a dict keyed by the wout file's native\nvariable names (e.g. lasym__logical__) and validates it with\nmodel_validate(attrs, by_alias=True), expecting the by_alias override to\napply. But VmecWOut.model_config set validate_by_alias=False, and with a\nmodel_validator(mode=\"wrap\") present (used to scope jaxtyping axis checks\nto the model), a runtime by_alias/by_name override passed to\nmodel_validate() is silently dropped -- a known pydantic-core bug\n(pydantic/pydantic#13661), fixed upstream but not yet in a pinned release.\n\nSet validate_by_alias=True directly in VmecWOut.model_config instead of\nrelying on the call-time override, which works correctly regardless.",
+          "timestamp": "2026-08-23T20:53:22+02:00",
+          "tree_id": "521e81bb0c7d907ca138142a7d9fd061faaab3aa",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/1d7e09941c89210be95b6b20f4d4d555f0a63096"
+        },
+        "date": 1787613806622,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.3830109662000041,
+            "range": "stddev: 0.0016133498274580862",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_invalid_input",
+            "value": 0.38134114339999314,
+            "range": "stddev: 0.0040941219953371365",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.452782619000004,
+            "range": "stddev: 0.025588632469306424",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.1046516923333343,
+            "range": "stddev: 0.008919628950292401",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.6068391833333255,
+            "range": "stddev: 0.03715456737996232",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.058143267333321,
+            "range": "stddev: 0.04577074045021771",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 7.149407941333341,
+            "range": "stddev: 0.007633424596140314",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 3.5235356759999945,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.47446257499996136,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
