@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1787768578890,
+  "lastUpdate": 1788201399280,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -19407,6 +19407,86 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.4780393979999644,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "440530476fef47448344aabf68351bd934d6c027",
+          "message": "Check the circular-filament vector potential against its closed form (#723)\n\n* Check the circular-filament vector potential against its closed form\n\n* Retrigger CI",
+          "timestamp": "2026-08-31T19:17:46+02:00",
+          "tree_id": "73ebc4db75a2e787ed22c43e6c386f43839ba9fe",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/440530476fef47448344aabf68351bd934d6c027"
+        },
+        "date": 1788201397921,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.3638820799999962,
+            "range": "stddev: 0.004286673870177548",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.5912366716666875,
+            "range": "stddev: 0.018957117087345526",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.130583783333331,
+            "range": "stddev: 0.001650185941488331",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.6227445826666553,
+            "range": "stddev: 0.027001369283434225",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 2.317180156666685,
+            "range": "stddev: 0.016226391475690116",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 7.550805641666652,
+            "range": "stddev: 0.043455134626707234",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 3.7997800879999772,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.39132286199998134,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
