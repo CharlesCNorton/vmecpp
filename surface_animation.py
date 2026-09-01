@@ -92,18 +92,40 @@ else:
     frames = sorted({1, n_max} | {int(round(ratio**i)) for i in range(max_frames)})
     frames = [f for f in frames if 1 <= f <= n_max]
 
-states = {}  # cache of (accelerate, k) -> wout, so the final state is computed once
-fig, axes = plt.subplots(2, 2, figsize=(11, 9))
-writer = PillowWriter(fps=8)
+# Compute every frame's state first, so the axes can be fixed to the extent of
+# the whole animation and the panels keep their place from frame to frame.
+states = {}
+for k in frames:
+    for accelerate in (False, True):
+        k_eff = min(k, lengths[accelerate])
+        if (accelerate, k_eff) not in states:
+            states[(accelerate, k_eff)] = state_after(accelerate, k_eff)
+            print(f"state {k_eff} accelerated={accelerate}", flush=True)
+
 nfp = int(base.nfp)
+zetas = (0.0, np.pi / nfp)
+limits = []
+for zeta in zetas:
+    rs, zs = [], []
+    for w in states.values():
+        if w is None:
+            continue
+        r, z = cross_sections(w, zeta)
+        rs.append(r)
+        zs.append(z)
+    r_all, z_all = np.concatenate([x.ravel() for x in rs]), np.concatenate([x.ravel() for x in zs])
+    dr, dz = r_all.max() - r_all.min(), z_all.max() - z_all.min()
+    limits.append((r_all.min() - 0.05 * dr, r_all.max() + 0.05 * dr, z_all.min() - 0.05 * dz, z_all.max() + 0.05 * dz))
+
+fig, axes = plt.subplots(2, 2, figsize=(11, 9))
+fig.subplots_adjust(left=0.08, right=0.97, bottom=0.06, top=0.9, wspace=0.3, hspace=0.35)
+writer = PillowWriter(fps=8)
 with writer.saving(fig, out_gif, dpi=72):
     for k in frames:
         for col, accelerate in enumerate((False, True)):
             k_eff = min(k, lengths[accelerate])
-            if (accelerate, k_eff) not in states:
-                states[(accelerate, k_eff)] = state_after(accelerate, k_eff)
             w = states[(accelerate, k_eff)]
-            for row, zeta in enumerate((0.0, np.pi / nfp)):
+            for row, zeta in enumerate(zetas):
                 ax = axes[row][col]
                 ax.clear()
                 if w is not None:
@@ -111,7 +133,10 @@ with writer.saving(fig, out_gif, dpi=72):
                     for j in range(r.shape[0]):
                         ax.plot(r[j], z[j], color="#1f77b4" if not accelerate else "#d62728", lw=0.8)
                     ax.plot(r[-1], z[-1], color="k", lw=1.2)
-                ax.set_aspect("equal")
+                r_lo, r_hi, z_lo, z_hi = limits[row]
+                ax.set_xlim(r_lo, r_hi)
+                ax.set_ylim(z_lo, z_hi)
+                ax.set_aspect("equal", adjustable="box")
                 fsq_now = traces[accelerate][k_eff - 1] if traces[accelerate] is not None and k_eff <= len(traces[accelerate]) else float("nan")
                 label = "plain" if not accelerate else "Anderson"
                 tag = f"iteration {k_eff}"
@@ -122,7 +147,6 @@ with writer.saving(fig, out_gif, dpi=72):
                 ax.set_ylabel("Z [m]")
                 ax.grid(alpha=0.3)
         fig.suptitle(f"{case}: first multigrid stage (ns = {int(base.ns_array[0])}); plain {lengths[False]} it ({status[False]}), Anderson {lengths[True]} it ({status[True]})", fontsize=10)
-        fig.tight_layout()
         writer.grab_frame()
         print(f"frame {k}", flush=True)
 print("wrote", out_gif)
