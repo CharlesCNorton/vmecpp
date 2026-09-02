@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788364838932,
+  "lastUpdate": 1788374677495,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -19887,6 +19887,86 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.29720533399995475,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": false,
+          "id": "c080fe253481190c282ce3030a3ec0f8f7daab8d",
+          "message": "Check the threed1 output structures through the Python bindings (#756)\n\n* Check the threed1 output structures through the Python bindings\n\n* Skip the threed1 checks where the git-lfs dumps are unavailable\n\n* Check a few members of each threed1 structure rather than all of them\n\n* Wrap the test docstring the way docformatter does",
+          "timestamp": "2026-09-02T19:13:32+02:00",
+          "tree_id": "4aa9ba63b20b760ac4566ce54145bd9dd7a3f377",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/c080fe253481190c282ce3030a3ec0f8f7daab8d"
+        },
+        "date": 1788374675559,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.3694276182000067,
+            "range": "stddev: 0.004104004232944465",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.428680625999997,
+            "range": "stddev: 0.02443831680784163",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 1.087843433000008,
+            "range": "stddev: 0.0015551357077614797",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.5907598843333517,
+            "range": "stddev: 0.020978900678407648",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.977690462333328,
+            "range": "stddev: 0.006937203058860318",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 7.133758549666671,
+            "range": "stddev: 0.003772201903959993",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 3.2424326440000186,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.45917638899999247,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
