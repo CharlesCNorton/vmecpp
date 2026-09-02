@@ -16,6 +16,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.ticker import MaxNLocator
 import numpy as np
 from matplotlib.animation import PillowWriter
 
@@ -143,6 +144,7 @@ with writer.saving(fig, out_gif, dpi=72):
                 if accelerate in failed_at and k_eff >= failed_at[accelerate]:
                     tag += " (last state before abort)"
                 ax.set_title(f"{label}, {tag}, fsq {fsq_now:.1e}, zeta = {'0' if zeta == 0 else 'pi/nfp'}", fontsize=9)
+                ax.xaxis.set_major_locator(MaxNLocator(nbins=3))
                 ax.set_xlabel("R [m]")
                 ax.set_ylabel("Z [m]")
                 ax.grid(alpha=0.3)
