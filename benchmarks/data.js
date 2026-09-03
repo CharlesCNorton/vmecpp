@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788426073060,
+  "lastUpdate": 1788454358517,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -20047,6 +20047,86 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.30079122799998004,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3de0aa6a5adec4418502b6425dadad22c8ed4d8b",
+          "message": "Write and read variable-length string datasets through character pointers (#790)",
+          "timestamp": "2026-09-03T18:13:14+02:00",
+          "tree_id": "7fd38096e43f1aa27a4b0498ce8c246cf3a80808",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/3de0aa6a5adec4418502b6425dadad22c8ed4d8b"
+        },
+        "date": 1788454357104,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.29439570519999736,
+            "range": "stddev: 0.00406021259932134",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.1091659600000034,
+            "range": "stddev: 0.006455044828958089",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 0.8981341536666605,
+            "range": "stddev: 0.009669882645610098",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.3419293309999982,
+            "range": "stddev: 0.06031617222995856",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.737546280999993,
+            "range": "stddev: 0.010611085505195763",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 6.04088747166666,
+            "range": "stddev: 0.01180552726158343",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 3.3247453899999755,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.3061569840000402,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
