@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788454486902,
+  "lastUpdate": 1788700356133,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -20127,6 +20127,86 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.3061569840000402,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "01ec1c567896d358f8d2750a56c65c9c4691b77f",
+          "message": "Report the free-boundary edge quantities as a threed1 section (#745)\n\n* Report the free-boundary edge quantities as a threed1 section\n\n* Drop the blank lines left where the free-boundary call moved\n\n* Silence the clang-tidy array and naming checks on the new H5key\n\n* Declare the new H5key as a pointer\n\n* Exempt the new H5key from the identifier-naming check",
+          "timestamp": "2026-09-06T12:35:18+02:00",
+          "tree_id": "6f4851e0b7a73ea2332bcdcbd74bef01303bf689",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/01ec1c567896d358f8d2750a56c65c9c4691b77f"
+        },
+        "date": 1788700354815,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.28060098040000414,
+            "range": "stddev: 0.0017126464161986666",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 2.031398511666642,
+            "range": "stddev: 0.03809801641893974",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 0.8915525150000198,
+            "range": "stddev: 0.0033582958249456225",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.3023783740000379,
+            "range": "stddev: 0.04079284175524865",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.730633110333353,
+            "range": "stddev: 0.005648482156646392",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 5.90992587400001,
+            "range": "stddev: 0.01016537247613378",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 4.077147427,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.29789209500006564,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
