@@ -119,6 +119,9 @@ before-build = "yum install -y zlib-devel"
 
 [tool.cibuildwheel.macos]
 before-build = "brew install gcc libomp"
+# simsopt has no CPython 3.14 wheels and builds from source in the test
+# environment; without OpenMP_ROOT it builds without OpenMP, as its wheels are.
+test-environment = { OpenMP_ROOT = "" }
 
 [tool.coverage.run]
 source_pkgs = ["vmecpp", "tests"]
