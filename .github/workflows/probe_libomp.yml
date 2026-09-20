@@ -1,0 +1,33 @@
+name: Probe libomp on macOS cp314
+
+on:
+  push:
+    branches: ["probe-*"]
+
+env:
+  PIP_CONSTRAINT: ${{ github.workspace }}/.github/constraints.txt
+  UV_CONSTRAINT: ${{ github.workspace }}/.github/constraints.txt
+
+jobs:
+  probe:
+    name: cp314 wheel on macos-14 with the libomp probe
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
+      - name: Build and probe
+        uses: pypa/cibuildwheel@v3.3.1
+        env:
+          CIBW_BUILD: "cp314-macosx_arm64"
+          CIBW_ENVIRONMENT_MACOS: >
+            MACOSX_DEPLOYMENT_TARGET=14.0
+            DYLD_LIBRARY_PATH=/usr/local/opt/gcc/lib/gcc/current/:$DYLD_LIBRARY_PATH
+            FC=gfortran-14
+            OpenMP_ROOT=$(brew --prefix)/opt/libomp
+          CIBW_TEST_COMMAND: "python {package}/.github/probe_libomp.py"
+        with:
+          package-dir: .
+          output-dir: wheelhouse
+          config-file: "{package}/pyproject.toml"
