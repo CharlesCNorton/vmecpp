@@ -127,9 +127,10 @@ ProfileCoeffType = typing.Annotated[
 ]
 
 MgridModeType: typing.TypeAlias = typing.Annotated[
-    typing.Literal["R", "S", ""], pydantic.Field(max_length=1)
+    typing.Literal["R", "S", "N", ""], pydantic.Field(max_length=1)
 ]
-"""[Scaled, Raw, Unset]"""
+"""[Raw, Scaled, None as older MAKEGRID files and simsopt's mgrid writer mark it,
+Unset]"""
 
 ProfileType = typing.Annotated[str, pydantic.Field(max_length=20)]
 
