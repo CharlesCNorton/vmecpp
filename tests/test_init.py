@@ -711,6 +711,10 @@ def test_vmec_output_serialization(cma_output: vmecpp.VmecOutput):
     for field in vmecpp.VmecOutput.model_fields:
         deserialized_field = getattr(deserialized_output, field)
         output_field = getattr(cma_output, field)
+        # an optional part the input did not ask for is absent on both sides
+        if output_field is None:
+            assert deserialized_field is None, field
+            continue
         # Check the individual fields of the nested object
         for attr in vars(output_field):
             error_msg = f"mismatch in {attr}"
