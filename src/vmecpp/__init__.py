@@ -457,6 +457,13 @@ class VmecInput(BaseModelWithNumpy):
     installing a source is refused unless this is set.
     """
 
+    return_vacuum_field: bool = False
+    """Return the boundary quantities of a free-boundary run in
+    ``VmecOutput.threed1_free_boundary``: the boundary geometry, the plasma-side
+    and vacuum-side pressures, and the cylindrical components of the vacuum field
+    NESTOR computes on the boundary. ``freeb_data`` in Fortran VMEC.
+    """
+
     return_outputs_even_if_not_converged: bool = False
     """If true, return a wout even if VMEC++ did not converge, instead of raising a
     RuntimeError.
@@ -2154,6 +2161,71 @@ class Threed1AxisGeometry(BaseModelWithNumpy):
         return Threed1AxisGeometry(**attrs)
 
 
+class Threed1FreeBoundary(BaseModelWithNumpy):
+    """The boundary quantities of a free-boundary run, ``freeb_data`` in Fortran VMEC.
+
+    Every array is (nzeta, ntheta) on the solver's grid: toroidal points
+    ``phib = 2 pi k / (nzeta nfp)`` over one field period and the poloidal points
+    of the reduced range (the full range when ``lasym``). The pressures are
+    VMEC's normalized ones, ``B^2/2 + mu0 p`` on the plasma side and ``B^2/2`` on
+    the vacuum side, so their difference is the jump in total pressure across
+    the boundary. Every array is zero for a fixed-boundary run.
+    """
+
+    model_config = pydantic.ConfigDict(extra="forbid")
+
+    rb: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Boundary R."""
+
+    phib: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Toroidal angle of each point."""
+
+    zb: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Boundary Z."""
+
+    bsqmhdi: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Plasma-side total pressure when the vacuum field was first established."""
+
+    bsqvaci: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Vacuum-side magnetic pressure when the vacuum field was first established."""
+
+    bsqmhdf: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Plasma-side total pressure at convergence."""
+
+    bsqvacf: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Vacuum-side magnetic pressure at convergence."""
+
+    bredge: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Plasma-side B_R on the boundary, extrapolated from the two outermost half
+    points."""
+
+    bpedge: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Plasma-side B_phi on the boundary."""
+
+    bzedge: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Plasma-side B_Z on the boundary."""
+
+    brv: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Vacuum B_R on the boundary, from the free-boundary solver."""
+
+    bphiv: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Vacuum B_phi on the boundary."""
+
+    bzv: jt.Float[np.ndarray, "nzeta ntheta"]
+    """Vacuum B_Z on the boundary."""
+
+    @staticmethod
+    def _from_cpp_threed1_free_boundary(
+        cpp_threed1_free_boundary: _vmecpp.Threed1FreeBoundary,
+    ) -> Threed1FreeBoundary:
+        return Threed1FreeBoundary(
+            **{
+                attr: getattr(cpp_threed1_free_boundary, attr)
+                for attr in own_model_fields(Threed1FreeBoundary)
+            }
+        )
+
+
 class Threed1Betas(BaseModelWithNumpy):
     """Python equivalent of the beta values in VMEC's "threed1" file."""
 
@@ -2461,6 +2533,10 @@ class VmecOutput(BaseModelWithNumpy):
     wout: VmecWOut
     """Python equivalent of VMEC's "wout" file."""
 
+    threed1_free_boundary: Threed1FreeBoundary | None = None
+    """The boundary quantities of a free-boundary run, including the vacuum field on
+    the boundary; present when the input sets ``return_vacuum_field``."""
+
 
 _progress_tip_shown = False
 
@@ -2599,6 +2675,13 @@ def run(
             cpp_output_quantities.threed1_shafranov_integrals
         )
     )
+    threed1_free_boundary = (
+        Threed1FreeBoundary._from_cpp_threed1_free_boundary(
+            cpp_output_quantities.threed1_free_boundary
+        )
+        if input.return_vacuum_field
+        else None
+    )
     return VmecOutput(
         input=input,
         wout=wout,
@@ -2610,6 +2693,7 @@ def run(
         threed1_axis=threed1_axis,
         threed1_betas=threed1_betas,
         threed1_shafranov_integrals=threed1_shafranov_integrals,
+        threed1_free_boundary=threed1_free_boundary,
     )
 
 
