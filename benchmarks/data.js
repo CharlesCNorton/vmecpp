@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1788700482500,
+  "lastUpdate": 1790531911708,
   "repoUrl": "https://github.com/CharlesCNorton/vmecpp",
   "entries": {
     "Benchmark": [
@@ -20207,6 +20207,86 @@ window.BENCHMARK_DATA = {
           {
             "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
             "value": 0.29789209500006564,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "committer": {
+            "email": "machineelv@gmail.com",
+            "name": "CharlesCNorton",
+            "username": "CharlesCNorton"
+          },
+          "distinct": false,
+          "id": "f388bacdb6836e70abc0e6e5f9f42e4fe52b1944",
+          "message": "Add the second certified W7-X torus to the reference data and compare each torus at its own tolerance",
+          "timestamp": "2026-09-27T13:48:33-04:00",
+          "tree_id": "af381d4e45d377e17aa9a3ff9d98fa9c6759cff5",
+          "url": "https://github.com/CharlesCNorton/vmecpp/commit/f388bacdb6836e70abc0e6e5f9f42e4fe52b1944"
+        },
+        "date": 1790531904970,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_cli_startup",
+            "value": 0.28028485600004843,
+            "range": "stddev: 0.0011324456071154232",
+            "unit": "seconds",
+            "extra": "rounds: 5"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_w7x",
+            "value": 1.9875897330000118,
+            "range": "stddev: 0.0282199757828732",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma",
+            "value": 0.8883225306666418,
+            "range": "stddev: 0.0011609932198218451",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_fixed_boundary_cma_6x8",
+            "value": 1.3498066783333418,
+            "range": "stddev: 0.05029469286323086",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_response_table_from_coils",
+            "value": 1.273384627666663,
+            "range": "stddev: 0.0023511415663632256",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_free_boundary",
+            "value": 5.552789140333364,
+            "range": "stddev: 0.0066600129500894705",
+            "unit": "seconds",
+            "extra": "rounds: 3"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_adjoint_gradient",
+            "value": 9.968248697999911,
+            "range": "stddev: 0",
+            "unit": "seconds",
+            "extra": "rounds: 1"
+          },
+          {
+            "name": "benchmarks/test_benchmarks.py::test_bench_simsopt_finite_difference_gradient",
+            "value": 0.3231264959999862,
             "range": "stddev: 0",
             "unit": "seconds",
             "extra": "rounds: 1"
