@@ -15,12 +15,12 @@ establishes each discrete solution by the interval Newton test on the collocated
 system (Colloc.colloc_correct): exactly one zero lies in a box three units of a
 58-bit mantissa wide in each unknown, around a centre refined by Newton steps on
 the system's outputs read at 128 bits (Newton.centre_tab, Wide.v). That box gives
-the error to the digits below. The enclosures fall by 3.81 and 3.92 per doubling
-of ns for the three-dimensional mapping and by 3.73 and 3.87 for the others, the
-second order HalfGrid.lax_second_order asks of the discretization, and the pressure,
-which enters the radial force only as a flux function the rule and its source
-share, leaves the error unchanged. The floating-point solve is held to the
-enclosures up to its own accuracy, a relative 1e-9.
+the error to the digits below. The enclosures fall by 3.81, 3.92 and 3.97 per
+doubling of ns for the three-dimensional mapping and by 3.73 and 3.87 for the
+others, the second order HalfGrid.lax_second_order asks of the discretization, and
+the pressure, which enters the radial force only as a flux function the rule and
+its source share, leaves the error unchanged. The floating-point solve is held to
+the enclosures up to its own accuracy, a relative 1e-9.
 """
 
 from __future__ import annotations
@@ -42,6 +42,7 @@ CERTIFIED = {
         9: (2.7343293671611875e-06, 2.734329367161228e-06),
         17: (7.169121696713442e-07, 7.169121696713848e-07),
         33: (1.8303258473727804e-07, 1.830325847373187e-07),
+        65: (4.607481830039875e-08, 4.6074818300439406e-08),
     },
     "asymmetric": {
         9: (2.6907305700613703e-05, 2.6907305700613723e-05),
@@ -80,8 +81,8 @@ def test_error_within_the_certificate(errors, name, ns):
 
 @pytest.mark.parametrize("name", list(CERTIFIED))
 def test_certified_error_falls_fourfold(name):
-    """Between consecutive resolutions the ratio of the errors, over every value
-    the two enclosures allow, lies between 3.5 and 4.5."""
+    """Between consecutive resolutions the ratio of the errors, over every value the two
+    enclosures allow, lies between 3.5 and 4.5."""
     table = CERTIFIED[name]
     ns = sorted(table)
     for a, b in pairwise(ns):
