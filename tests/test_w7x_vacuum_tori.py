@@ -43,8 +43,10 @@ import w7x_vacuum_tori as wv
 
 DATA = Path(__file__).resolve().parent / "data" / "w7x_tori" / "certified_tori.json"
 NS = 49
-# VMEC++ at NS surfaces against a certified torus, per Fourier coefficient
-COEFFICIENT_TOL = 5e-4
+# VMEC++ at NS surfaces against each certified torus, per Fourier coefficient; the
+# outer torus sits closer to the 5/5 island chain at the edge, which nested surfaces
+# cannot represent
+COEFFICIENT_TOL = {"surface_0.100": 5e-4, "surface_0.170": 1.5e-3}
 
 
 @pytest.fixture(scope="module")
@@ -98,7 +100,7 @@ def test_vacuum_surface_matches_certified_torus(wout, tori):
             np.abs(Rc - np.asarray(t["Rc"])).max(),
             np.abs(Zs - np.asarray(t["Zs"])).max(),
         )
-        assert diff <= COEFFICIENT_TOL, (t["name"], s, diff)
+        assert diff <= COEFFICIENT_TOL[t["name"]], (t["name"], s, diff)
 
 
 def test_boundary_between_certified_tori(wout, tori):
