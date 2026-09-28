@@ -20,7 +20,10 @@ doubling of ns for the three-dimensional mapping and by 3.73 and 3.87 for the
 others, the second order HalfGrid.lax_second_order asks of the discretization, and
 the pressure, which enters the radial force only as a flux function the rule and
 its source share, leaves the error unchanged. The floating-point solve is held to
-the enclosures up to its own accuracy, a relative 1e-9.
+the enclosures up to its own accuracy, a relative 1e-9. The system is the half-grid
+residual at collocation points, not VMEC's own discrete equations, which come from
+the variation of the energy with spectral condensation and a constraint on the
+m = 1 modes, so its errors measure the half-grid rule.
 """
 
 from __future__ import annotations
