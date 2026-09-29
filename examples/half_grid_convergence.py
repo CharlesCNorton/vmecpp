@@ -24,8 +24,8 @@ constraint RSC_1n = ZCC_1n, and r_u is collocated for the remaining cosine modes
 
 Stellarocq (https://github.com/CharlesCNorton/stellarocq, gen/mms_colloc.py)
 establishes each discrete solution by the interval Newton test on the collocated
-system (Colloc.colloc_correct) in a box a few hundredths of a nanometre wide, which
-encloses the error, and bounds the inverse of the system there
+system (Colloc.colloc_correct) in a box of radius at most 5.2e-18 in each
+coefficient, which encloses the error, and bounds the inverse of the system there
 (Colloc.colloc_stability). tests/test_half_grid_convergence.py holds those numbers.
 
 The pressure enters the radial force only as -mu0 dp/ds, a flux function that is the
