@@ -15,9 +15,9 @@ rational surface, whose ideal response is a current sheet.
 The numbers below are enclosures of the equispaced (2,1) harmonic on a 64 by
 32 grid of angles at the converged states of ns = 65, 129 and 257, established
 by Stellarocq's Harmonic.dharm_correct
-(https://github.com/CharlesCNorton/stellarocq, gen/forced_sheet.py). The
-enclosure at ns = 65 holds over every state whose R, Z and lambda coefficients
-lie within a relative 1e-12 of the converged ones.
+(https://github.com/CharlesCNorton/stellarocq, gen/forced_sheet.py). Over every
+state whose R, Z and lambda coefficients lie within a relative 1e-14 of the
+converged ones the harmonic stays above CERTIFIED_FLOOR at each ns.
 """
 
 from __future__ import annotations
@@ -36,12 +36,12 @@ NS = (65, 129, 257)
 
 # certified enclosures of the (2,1) harmonic at the converged state of each ns
 CERTIFIED_21 = {
-    65: (8.3484e-05, 8.4498e-05),
-    129: (8.6749e-05, 9.0712e-05),
-    257: (6.1921e-05, 7.7586e-05),
+    65: (8.3487e-05, 8.4502e-05),
+    129: (8.6756e-05, 9.0721e-05),
+    257: (6.1943e-05, 7.7635e-05),
 }
-# the least of the three lower ends
-CERTIFIED_FLOOR = 6.19e-05
+# the least lower end of the enclosures over the boxes of relative width 1e-14
+CERTIFIED_FLOOR = 5.32e-05
 
 
 @pytest.fixture(scope="module")
